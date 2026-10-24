@@ -1,37 +1,35 @@
 import { StatusBar } from 'expo-status-bar';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { AppState, Image, Pressable, ScrollView, Share, StyleSheet, Switch, Text, View } from 'react-native';
+import { AppState, Image, type ImageSourcePropType, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 
 import Gow3Core from './modules/gow3-core/src/Gow3CoreModule';
 
 const APP_NAME = 'Olympus';
+const GAME_TITLE = 'God of War III Remastered';
 const POOL_MB = 256;
+const HELMET = require('./assets/icon.png');
 
 type Pairing = Awaited<ReturnType<typeof Gow3Core.pairingState>>;
 type BuiltIn = Awaited<ReturnType<typeof Gow3Core.builtInJitStatus>>;
+type Tab = 'home' | 'setup' | 'system';
 
 // controllers() is new in the native build after 4ed13b6; older installed IPAs lack it.
 const listControllers = () => (typeof Gow3Core.controllers === 'function' ? Gow3Core.controllers() : []);
 // The on-screen controls switch is new in 0.1.44, the FPS cap in 0.1.45; older installed IPAs lack them.
 const hasTouchControls = typeof Gow3Core.touchControlsEnabled === 'function';
 const hasFpsLimit = typeof Gow3Core.fpsLimit === 'function';
-const FPS_LIMITS: Array<[number, string]> = [
-  [30, '30'],
-  [60, '60'],
-  [0, 'Off'],
-];
+const FPS_LIMITS = [30, 60, 0];
 
 const color = {
-  bg: '#0b0b0e',
-  card: '#15151a',
-  raised: '#1d1d24',
-  border: '#272730',
-  text: '#f3f1ee',
-  muted: '#9b98a3',
-  faint: '#5f5c66',
-  ember: '#d0402f',
-  emberDeep: '#8f2219',
-  gold: '#e3b04b',
+  bg: '#07070a',
+  panel: 'rgba(22, 22, 28, 0.92)',
+  raised: '#1e1e26',
+  border: 'rgba(255, 255, 255, 0.08)',
+  text: '#f4f2ee',
+  muted: '#a29fab',
+  faint: '#615e69',
+  ember: '#d4412f',
+  gold: '#e6b44f',
   ok: '#4cc38a',
   warn: '#f0a04b',
 };
@@ -52,92 +50,58 @@ function jitReady(report: string): boolean {
   }
 }
 
-function Card({ children, style }: { children: ReactNode; style?: object }) {
-  return <View style={[styles.card, style]}>{children}</View>;
+function useClock(): string {
+  const format = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const [time, setTime] = useState(format);
+  useEffect(() => {
+    const timer = setInterval(() => setTime(format()), 15000);
+    return () => clearInterval(timer);
+  }, []);
+  return time;
 }
 
-function SectionTitle({ children }: { children: string }) {
-  return <Text style={styles.sectionTitle}>{children}</Text>;
+function Pill({ label, good }: { label: string; good: boolean }) {
+  return (
+    <View style={[styles.pill, { borderColor: good ? 'rgba(76,195,138,0.5)' : 'rgba(240,160,75,0.5)' }]}>
+      <View style={[styles.dot, { backgroundColor: good ? color.ok : color.warn }]} />
+      <Text style={styles.pillText}>{label}</Text>
+    </View>
+  );
 }
 
-function Button({
-  title,
-  onPress,
-  disabled,
-  kind = 'secondary',
-}: {
-  title: string;
-  onPress: () => void;
-  disabled?: boolean;
-  kind?: 'primary' | 'secondary' | 'quiet';
-}) {
+function Button({ title, onPress, disabled, quiet }: { title: string; onPress: () => void; disabled?: boolean; quiet?: boolean }) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      style={({ pressed }) => [
-        styles.button,
-        kind === 'primary' && styles.buttonPrimary,
-        kind === 'quiet' && styles.buttonQuiet,
-        pressed && styles.buttonPressed,
-        disabled && styles.buttonDisabled,
-      ]}
+      style={({ pressed }) => [styles.button, quiet && styles.buttonQuiet, pressed && styles.pressed, disabled && styles.disabled]}
     >
-      <Text style={[styles.buttonText, kind === 'primary' && styles.buttonTextPrimary]}>{title}</Text>
+      <Text style={styles.buttonText}>{title}</Text>
     </Pressable>
   );
 }
 
-function Tile({ label, value, good }: { label: string; value: string; good: boolean }) {
+function QuickTile({ title, value, detail, onPress, active }: { title: string; value: string; detail: string; onPress?: () => void; active?: boolean }) {
   return (
-    <View style={styles.tile}>
-      <View style={styles.tileHead}>
-        <View style={[styles.dot, { backgroundColor: good ? color.ok : color.warn }]} />
-        <Text style={styles.tileLabel}>{label}</Text>
-      </View>
-      <Text style={styles.tileValue} numberOfLines={1}>
+    <Pressable onPress={onPress} disabled={!onPress} style={({ pressed }) => [styles.quick, active && styles.quickActive, pressed && styles.pressed]}>
+      <Text style={styles.quickTitle}>{title}</Text>
+      <Text style={styles.quickValue} numberOfLines={1}>
         {value}
       </Text>
-    </View>
+      <Text style={styles.quickDetail} numberOfLines={2}>
+        {detail}
+      </Text>
+    </Pressable>
   );
 }
 
-function Segmented({ options, value, onChange }: { options: Array<[number, string]>; value: number; onChange: (v: number) => void }) {
+function Panel({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
   return (
-    <View style={styles.segmented}>
-      {options.map(([v, label]) => (
-        <Pressable key={label} onPress={() => onChange(v)} style={[styles.segment, value === v && styles.segmentOn]}>
-          <Text style={[styles.segmentText, value === v && styles.segmentTextOn]}>{label}</Text>
-        </Pressable>
-      ))}
+    <View style={styles.panel}>
+      <Text style={styles.panelTitle}>{title}</Text>
+      {subtitle ? <Text style={styles.panelSubtitle}>{subtitle}</Text> : null}
+      <View style={styles.panelBody}>{children}</View>
     </View>
-  );
-}
-
-function SettingRow({ title, detail, children }: { title: string; detail?: string; children: ReactNode }) {
-  return (
-    <View style={styles.settingRow}>
-      <View style={styles.settingText}>
-        <Text style={styles.settingTitle}>{title}</Text>
-        {detail ? <Text style={styles.settingDetail}>{detail}</Text> : null}
-      </View>
-      {children}
-    </View>
-  );
-}
-
-function Collapsible({ title, subtitle, open, onToggle, children }: { title: string; subtitle?: string; open: boolean; onToggle: () => void; children: ReactNode }) {
-  return (
-    <Card>
-      <Pressable onPress={onToggle} style={styles.collapsibleHead}>
-        <View style={styles.settingText}>
-          <Text style={styles.cardTitle}>{title}</Text>
-          {subtitle ? <Text style={styles.settingDetail}>{subtitle}</Text> : null}
-        </View>
-        <Text style={styles.chevron}>{open ? '▾' : '▸'}</Text>
-      </Pressable>
-      {open ? <View style={styles.collapsibleBody}>{children}</View> : null}
-    </Card>
   );
 }
 
@@ -151,7 +115,30 @@ function FileLine({ name, present, required }: { name: string; present: boolean;
   );
 }
 
+function Mono({ title, text }: { title: string; text: string }) {
+  return (
+    <View style={styles.mono}>
+      <Text style={styles.monoTitle}>{title}</Text>
+      <Text style={styles.monoText} selectable>
+        {text}
+      </Text>
+    </View>
+  );
+}
+
+function TabButton({ label, glyph, active, onPress }: { label: string; glyph: string; active: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={styles.tab}>
+      <Text style={[styles.tabGlyph, active && styles.tabActive]}>{glyph}</Text>
+      <Text style={[styles.tabLabel, active && styles.tabActive]}>{label}</Text>
+      {active ? <View style={styles.tabMark} /> : null}
+    </Pressable>
+  );
+}
+
 export default function App() {
+  const clock = useClock();
+  const [tab, setTab] = useState<Tab>('home');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [report, setReport] = useState(() => Gow3Core.deviceReport());
@@ -165,9 +152,7 @@ export default function App() {
   const [gpuReport, setGpuReport] = useState('');
   const [fpsLimit, setFpsLimit] = useState(() => (hasFpsLimit ? Gow3Core.fpsLimit() : 30));
   const [touchControls, setTouchControls] = useState(() => (hasTouchControls ? Gow3Core.touchControlsEnabled() : false));
-  const [jitOpen, setJitOpen] = useState(false);
-  const [filesOpen, setFilesOpen] = useState(false);
-  const [devOpen, setDevOpen] = useState(false);
+  const [coverFailed, setCoverFailed] = useState(false);
 
   const refresh = useCallback(() => {
     setReport(Gow3Core.deviceReport());
@@ -233,8 +218,8 @@ export default function App() {
           setStatus('Waiting for StikDebug…');
           return ready(await Gow3Core.enableJit(POOL_MB));
         }
-        setJitOpen(true);
-        return status.available ? 'Pair this iPhone first (JIT setup, below), and connect LocalDevVPN.' : `JIT unavailable: ${status.reason}`;
+        setTab('setup');
+        return status.available ? 'Pair this iPhone first (Setup), and connect LocalDevVPN.' : `JIT unavailable: ${status.reason}`;
       }),
     [run]
   );
@@ -255,16 +240,18 @@ export default function App() {
 
   const jit = jitReady(report);
   const filesReady = files.boot && files.eboot;
-  const missing = [!files.boot && 'boot-linked.bin', !files.eboot && 'eboot.bin'].filter(Boolean).length;
+  const missing = [!files.boot, !files.eboot].filter(Boolean).length;
   const pad = pads[0];
+  // The dump's own cover (0.1.46+ reports its path); the helmet before that or without one.
+  const cover: ImageSourcePropType = files.cover && !coverFailed ? { uri: files.cover } : HELMET;
 
   let play: { title: string; onPress: () => void; disabled: boolean; hint: string };
   if (files.started) {
-    play = { title: 'Running', onPress: () => {}, disabled: true, hint: 'The game is running. Two-finger double tap in game returns here.' };
+    play = { title: 'Running', onPress: () => {}, disabled: true, hint: 'In game. A two-finger double tap there brings you back here.' };
   } else if (!filesReady) {
-    play = { title: 'Add game files', onPress: () => setFilesOpen(true), disabled: false, hint: 'Copy your own game dump in with the Files app.' };
+    play = { title: 'Add game files', onPress: () => setTab('setup'), disabled: false, hint: `Copy your own dump in with the Files app (${APP_NAME} › gow3).` };
   } else if (!jit) {
-    play = { title: 'Enable JIT', onPress: enableJit, disabled: busy, hint: 'JIT is needed once per launch of the app.' };
+    play = { title: 'Enable JIT', onPress: enableJit, disabled: busy, hint: 'Needed once each time the app opens.' };
   } else {
     play = { title: 'Play', onPress: () => run(() => Gow3Core.startGame()), disabled: busy, hint: 'Ready.' };
   }
@@ -274,234 +261,294 @@ export default function App() {
       ? builtIn.paired
         ? 'Paired. Connect LocalDevVPN, run Check setup once, then Enable JIT.'
         : builtIn.pairingSupported
-          ? `Not paired. Tap Pair, then open Settings › Privacy & Security › Developer Mode and tap “Pair with gow3-ios”.`
+          ? 'Not paired. Tap Pair, then open Settings › Privacy & Security › Developer Mode and tap “Pair with gow3-ios”.'
           : 'Not paired. In-app pairing needs iOS 27; StikDebug works too.'
       : builtIn.reason
     : 'Checking…';
 
+  const cycleFps = () => {
+    const next = FPS_LIMITS[(FPS_LIMITS.indexOf(fpsLimit) + 1) % FPS_LIMITS.length];
+    Gow3Core.setFpsLimit(next);
+    setFpsLimit(next);
+  };
+
   return (
     <View style={styles.root}>
+      {/* Backdrop: the cover, blurred and faded into the background. */}
+      <Image source={cover} style={styles.backdrop} blurRadius={40} onError={() => setCoverFailed(true)} />
+      <View style={[styles.backdropFade, { top: 180, opacity: 0.45 }]} />
+      <View style={[styles.backdropFade, { top: 260, opacity: 0.75 }]} />
+      <View style={[styles.backdropFade, { top: 340, opacity: 1 }]} />
+
+      <View style={styles.topBar}>
+        <View style={styles.brand}>
+          <Image source={HELMET} style={styles.brandIcon} />
+          <Text style={styles.brandText}>{APP_NAME}</Text>
+        </View>
+        <View style={styles.topRight}>
+          <View style={[styles.dot, { backgroundColor: jit ? color.ok : color.warn }]} />
+          {pad ? <Text style={styles.topText}>🎮</Text> : null}
+          <Text style={styles.clock}>{clock}</Text>
+        </View>
+      </View>
+
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Image source={require('./assets/icon.png')} style={styles.logo} />
-          <View>
-            <Text style={styles.title}>{APP_NAME}</Text>
-            <Text style={styles.subtitle}>God of War III Remastered · PS4 port</Text>
-          </View>
-        </View>
-
-        <Card style={styles.hero}>
-          <Text style={styles.heroLabel}>{files.started ? 'IN GAME' : 'READY TO ASCEND'}</Text>
-          <Button title={play.title} onPress={play.onPress} disabled={play.disabled} kind="primary" />
-          <Text style={styles.heroHint}>{status || play.hint}</Text>
-        </Card>
-
-        <View style={styles.tiles}>
-          <Tile label="JIT" value={jit ? 'Ready' : builtIn?.paired ? 'Paired' : 'Needed'} good={jit} />
-          <Tile label="Game" value={filesReady ? 'Ready' : `${missing} missing`} good={filesReady} />
-          <Tile label="Input" value={pad ? pad.name : touchControls ? 'Touch' : 'None'} good={!!pad || touchControls} />
-        </View>
-
-        <SectionTitle>Settings</SectionTitle>
-        <Card>
-          {hasFpsLimit ? (
-            <SettingRow title="Frame rate cap" detail={files.started ? 'Applies at the next start' : '30 is steadier and cooler; 60 for light scenes'}>
-              <Segmented
-                options={FPS_LIMITS}
-                value={fpsLimit}
-                onChange={(v) => {
-                  Gow3Core.setFpsLimit(v);
-                  setFpsLimit(v);
-                }}
-              />
-            </SettingRow>
-          ) : null}
-          {hasTouchControls ? (
-            <SettingRow title="On-screen controls" detail="Hidden while a controller is connected. Long-press Hide in game to edit the layout.">
-              <Switch
-                value={touchControls}
-                onValueChange={(v) => {
-                  Gow3Core.setTouchControlsEnabled(v);
-                  setTouchControls(v);
-                }}
-                trackColor={{ true: color.ember, false: color.border }}
-              />
-            </SettingRow>
-          ) : null}
-          <SettingRow title="Controller" detail={pad ? `${pad.kind}${pad.haptics ? ' · haptics' : ''}${pad.battery >= 0 ? ` · ${Math.round(pad.battery * 100)}%` : ''}` : 'Pair one in Settings › Bluetooth'}>
-            <Text style={styles.settingValue}>{pad ? pad.name : 'None'}</Text>
-          </SettingRow>
-        </Card>
-
-        <SectionTitle>Setup</SectionTitle>
-        <Collapsible title="JIT" subtitle={jit ? 'Ready for this session' : builtIn?.paired ? 'Paired' : 'Pairing needed'} open={jitOpen} onToggle={() => setJitOpen(!jitOpen)}>
-          <Text style={styles.body}>{jitText}</Text>
-          {pairing && pairing.phase !== 'idle' ? (
-            <View style={styles.pairing}>
-              {pairing.phase === 'pin' ? (
-                <Text style={styles.pin} selectable>
-                  {pairing.pin}
-                </Text>
-              ) : null}
-              <Text style={styles.body}>{pairing.message}</Text>
-              {pairingActive && pairing.backgroundLimited ? <Text style={styles.warn}>iOS only waits about 30 s in the background: go to Settings straight away.</Text> : null}
+        {tab === 'home' ? (
+          <>
+            <View style={styles.hero}>
+              <Image source={cover} style={styles.cover} onError={() => setCoverFailed(true)} />
+              <View style={styles.heroInfo}>
+                <Text style={styles.platform}>PS4 · REMASTERED</Text>
+                <Text style={styles.gameTitle}>{GAME_TITLE}</Text>
+                <View style={styles.pills}>
+                  <Pill label={jit ? 'JIT ready' : 'JIT needed'} good={jit} />
+                  <Pill label={filesReady ? 'Installed' : `${missing} missing`} good={filesReady} />
+                </View>
+              </View>
             </View>
-          ) : null}
-          <View style={styles.row}>
-            <Button title="Enable JIT" onPress={enableJit} disabled={busy || jit} />
-            {pairingActive ? (
-              <Button title="Cancel pairing" onPress={() => Gow3Core.cancelPairing().then(refresh)} />
-            ) : (
-              <Button
-                title={builtIn?.paired ? 'Pair again' : 'Pair'}
-                onPress={() => Gow3Core.startPairing().then(refresh)}
-                disabled={busy || !builtIn?.available || !builtIn?.pairingSupported}
+
+            <Pressable
+              onPress={play.onPress}
+              disabled={play.disabled}
+              style={({ pressed }) => [styles.play, pressed && styles.pressed, play.disabled && styles.disabled]}
+            >
+              <Text style={styles.playGlyph}>▶</Text>
+              <Text style={styles.playText}>{play.title}</Text>
+            </Pressable>
+            <Text style={styles.hint}>{status || play.hint}</Text>
+
+            <Text style={styles.section}>Quick settings</Text>
+            <View style={styles.quickRow}>
+              {hasFpsLimit ? (
+                <QuickTile
+                  title="FRAME CAP"
+                  value={fpsLimit ? `${fpsLimit} FPS` : 'Off'}
+                  detail={files.started ? 'Next start' : fpsLimit === 30 ? 'Steady, cooler' : 'Tap to change'}
+                  onPress={cycleFps}
+                  active={fpsLimit === 30}
+                />
+              ) : null}
+              {hasTouchControls ? (
+                <QuickTile
+                  title="TOUCH"
+                  value={touchControls ? 'On' : 'Off'}
+                  detail="Hold Hide in game to edit"
+                  onPress={() => {
+                    Gow3Core.setTouchControlsEnabled(!touchControls);
+                    setTouchControls(!touchControls);
+                  }}
+                  active={touchControls}
+                />
+              ) : null}
+              <QuickTile
+                title="CONTROLLER"
+                value={pad ? pad.name : 'None'}
+                detail={pad ? (pad.battery >= 0 ? `${Math.round(pad.battery * 100)}% battery` : pad.kind) : 'Pair in Bluetooth'}
+                onPress={refresh}
+                active={!!pad}
               />
-            )}
-          </View>
-          <View style={styles.row}>
-            <Button
-              title="Check setup"
-              onPress={() => run(async () => (setStatus('Checking LocalDevVPN and the Developer Disk Image…'), await Gow3Core.prepareBuiltInJit()))}
-              disabled={busy || !builtIn?.paired || pairingActive}
-            />
-            <Button title="Reset disk image" onPress={() => run(() => Gow3Core.resetDeveloperDiskImage())} disabled={busy || !builtIn?.available} kind="quiet" />
-          </View>
-          <Button title="Forget pairing" onPress={() => Gow3Core.forgetPairing().then(refresh)} disabled={busy || !builtIn?.paired || pairingActive} kind="quiet" />
-        </Collapsible>
+            </View>
 
-        <Collapsible title="Game files" subtitle={filesReady ? 'All required files found' : `${missing} required file${missing === 1 ? '' : 's'} missing`} open={filesOpen} onToggle={() => setFilesOpen(!filesOpen)}>
-          <Text style={styles.body}>
-            {`Files app › On My iPhone › ${APP_NAME} › gow3. Use your own legally dumped copy (CUSA01623/01715/01720, update 01.02) and the files the PC prepare step makes.`}
-          </Text>
-          <View style={styles.fileList}>
-            <FileLine name="boot-linked.bin" present={files.boot} required />
-            <FileLine name="game/eboot.bin" present={files.eboot} required />
-            <FileLine name="game/sce_sys/param.sfo" present={files.sfo} />
-            <FileLine name="content.bin" present={files.content} />
-            <FileLine name="patches.bin" present={files.patches} />
-          </View>
-          <Button title="Check again" onPress={refresh} />
-        </Collapsible>
+            <Text style={styles.section}>Tips</Text>
+            <View style={styles.panel}>
+              <Text style={styles.body}>• Menu (touch) or R3 + L2 opens the settings and cheats menu in game.</Text>
+              <Text style={styles.body}>• Two-finger double tap on an empty spot returns here; the game keeps running.</Text>
+              <Text style={styles.body}>• A 30 FPS cap keeps heavy fights steady and the phone cooler.</Text>
+            </View>
+          </>
+        ) : null}
 
-        <SectionTitle>Advanced</SectionTitle>
-        <Collapsible title="Developer" subtitle="Logs, tests and diagnostics" open={devOpen} onToggle={() => setDevOpen(!devOpen)}>
-          <View style={styles.row}>
-            <Button title="Self-test" onPress={runSelfTest} disabled={busy} />
-            <Button
-              title="GPU test"
-              onPress={() =>
-                run(async () => {
-                  const json = await Gow3Core.gpuScreenTest(5);
-                  setGpuReport(pretty(json));
-                  return JSON.parse(json).ok ? 'GPU screen test passed.' : 'GPU screen test failed (see the report).';
-                })
-              }
-              disabled={busy || files.started}
-            />
-          </View>
-          <View style={styles.row}>
-            {files.started ? (
-              <Button title="Dump threads" onPress={() => run(async () => `Thread dump: ${await Gow3Core.dumpGameThreads()} threads (see the game log).`)} disabled={busy} />
-            ) : (
-              <Button title="CPU only" onPress={() => run(() => Gow3Core.startGameCpuOnly())} disabled={busy || !filesReady} />
-            )}
-            <Button
-              title="Share game log"
-              onPress={() => {
-                const text = Gow3Core.readGameLog();
-                if (text) Share.share({ message: text }).catch(() => {});
-              }}
-              disabled={!gameLog}
-            />
-          </View>
-          <View style={styles.row}>
-            <Button
-              title="Clear game log"
-              onPress={() => {
-                Gow3Core.clearGameLog();
-                refresh();
-              }}
-              disabled={busy}
-              kind="quiet"
-            />
-            <Button
-              title="Clear test log"
-              onPress={() => {
-                Gow3Core.clearLog();
-                refresh();
-              }}
-              disabled={busy}
-              kind="quiet"
-            />
-          </View>
-          {gameLog ? <Mono title="Game log" text={gameLog} /> : null}
-          {gpuReport ? <Mono title="GPU test" text={gpuReport} /> : null}
-          {result ? <Mono title="Self-test" text={result} /> : null}
-          <Mono title="Controllers" text={pads.length ? pads.map((p) => `${p.kind}: ${p.name} (${p.category})`).join('\n') : 'none'} />
-          <Mono title="Device" text={pretty(report)} />
-          <Mono title="Test log (survives crashes)" text={log || '(empty)'} />
-        </Collapsible>
+        {tab === 'setup' ? (
+          <>
+            <Panel title="JIT" subtitle={jit ? 'Ready for this session' : builtIn?.paired ? 'Paired' : 'Pairing needed'}>
+              <Text style={styles.body}>{jitText}</Text>
+              {pairing && pairing.phase !== 'idle' ? (
+                <View style={styles.pairing}>
+                  {pairing.phase === 'pin' ? (
+                    <Text style={styles.pin} selectable>
+                      {pairing.pin}
+                    </Text>
+                  ) : null}
+                  <Text style={styles.body}>{pairing.message}</Text>
+                  {pairingActive && pairing.backgroundLimited ? <Text style={styles.warn}>iOS only waits about 30 s in the background: go to Settings straight away.</Text> : null}
+                </View>
+              ) : null}
+              <View style={styles.row}>
+                <Button title="Enable JIT" onPress={enableJit} disabled={busy || jit} />
+                {pairingActive ? (
+                  <Button title="Cancel pairing" onPress={() => Gow3Core.cancelPairing().then(refresh)} />
+                ) : (
+                  <Button
+                    title={builtIn?.paired ? 'Pair again' : 'Pair'}
+                    onPress={() => Gow3Core.startPairing().then(refresh)}
+                    disabled={busy || !builtIn?.available || !builtIn?.pairingSupported}
+                  />
+                )}
+              </View>
+              <View style={styles.row}>
+                <Button
+                  title="Check setup"
+                  onPress={() => run(async () => (setStatus('Checking LocalDevVPN and the Developer Disk Image…'), await Gow3Core.prepareBuiltInJit()))}
+                  disabled={busy || !builtIn?.paired || pairingActive}
+                />
+                <Button title="Reset disk image" onPress={() => run(() => Gow3Core.resetDeveloperDiskImage())} disabled={busy || !builtIn?.available} quiet />
+              </View>
+              <Button title="Forget pairing" onPress={() => Gow3Core.forgetPairing().then(refresh)} disabled={busy || !builtIn?.paired || pairingActive} quiet />
+            </Panel>
 
-        <Text style={styles.footer}>A fan port that runs your own copy. Not affiliated with Sony Interactive Entertainment or Santa Monica Studio.</Text>
+            <Panel title="Game files" subtitle={filesReady ? 'All required files found' : `${missing} required file${missing === 1 ? '' : 's'} missing`}>
+              <Text style={styles.body}>
+                {`Files app › On My iPhone › ${APP_NAME} › gow3. Use your own legally dumped copy (CUSA01623/01715/01720, update 01.02) and the files the PC prepare step makes.`}
+              </Text>
+              <View style={styles.fileList}>
+                <FileLine name="boot-linked.bin" present={files.boot} required />
+                <FileLine name="game/eboot.bin" present={files.eboot} required />
+                <FileLine name="game/sce_sys/param.sfo" present={files.sfo} />
+                <FileLine name="content.bin" present={files.content} />
+                <FileLine name="patches.bin" present={files.patches} />
+              </View>
+              <Button title="Check again" onPress={refresh} />
+            </Panel>
+            {status ? <Text style={styles.hint}>{status}</Text> : null}
+          </>
+        ) : null}
+
+        {tab === 'system' ? (
+          <>
+            <Panel title="Diagnostics" subtitle="Tests, logs and device details">
+              <View style={styles.row}>
+                <Button title="Self-test" onPress={runSelfTest} disabled={busy} />
+                <Button
+                  title="GPU test"
+                  onPress={() =>
+                    run(async () => {
+                      const json = await Gow3Core.gpuScreenTest(5);
+                      setGpuReport(pretty(json));
+                      return JSON.parse(json).ok ? 'GPU screen test passed.' : 'GPU screen test failed (see the report).';
+                    })
+                  }
+                  disabled={busy || files.started}
+                />
+              </View>
+              <View style={styles.row}>
+                {files.started ? (
+                  <Button title="Dump threads" onPress={() => run(async () => `Thread dump: ${await Gow3Core.dumpGameThreads()} threads (see the game log).`)} disabled={busy} />
+                ) : (
+                  <Button title="CPU only" onPress={() => run(() => Gow3Core.startGameCpuOnly())} disabled={busy || !filesReady} />
+                )}
+                <Button
+                  title="Share game log"
+                  onPress={() => {
+                    const text = Gow3Core.readGameLog();
+                    if (text) Share.share({ message: text }).catch(() => {});
+                  }}
+                  disabled={!gameLog}
+                />
+              </View>
+              <View style={styles.row}>
+                <Button
+                  title="Clear game log"
+                  onPress={() => {
+                    Gow3Core.clearGameLog();
+                    refresh();
+                  }}
+                  disabled={busy}
+                  quiet
+                />
+                <Button
+                  title="Clear test log"
+                  onPress={() => {
+                    Gow3Core.clearLog();
+                    refresh();
+                  }}
+                  disabled={busy}
+                  quiet
+                />
+              </View>
+              {status ? <Text style={styles.hint}>{status}</Text> : null}
+            </Panel>
+            {gameLog ? <Mono title="Game log" text={gameLog} /> : null}
+            {gpuReport ? <Mono title="GPU test" text={gpuReport} /> : null}
+            {result ? <Mono title="Self-test" text={result} /> : null}
+            <Mono title="Controllers" text={pads.length ? pads.map((p) => `${p.kind}: ${p.name} (${p.category})`).join('\n') : 'none'} />
+            <Mono title="Device" text={pretty(report)} />
+            <Mono title="Test log (survives crashes)" text={log || '(empty)'} />
+            <View style={styles.panel}>
+              <Text style={styles.panelTitle}>About</Text>
+              <Text style={styles.body}>
+                {`${APP_NAME} runs your own copy of ${GAME_TITLE} through FEX and shadPS4's video core on Metal. A fan port, not affiliated with Sony Interactive Entertainment or Santa Monica Studio.`}
+              </Text>
+            </View>
+          </>
+        ) : null}
       </ScrollView>
-      <StatusBar style="light" />
-    </View>
-  );
-}
 
-function Mono({ title, text }: { title: string; text: string }) {
-  return (
-    <View style={styles.mono}>
-      <Text style={styles.monoTitle}>{title}</Text>
-      <Text style={styles.monoText} selectable>
-        {text}
-      </Text>
+      <View style={styles.tabBar}>
+        <TabButton label="Home" glyph="⌂" active={tab === 'home'} onPress={() => setTab('home')} />
+        <TabButton label="Setup" glyph="⚙︎" active={tab === 'setup'} onPress={() => setTab('setup')} />
+        <TabButton label="System" glyph="≡" active={tab === 'system'} onPress={() => setTab('system')} />
+      </View>
+      <StatusBar style="light" />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.bg },
-  content: { padding: 18, paddingTop: 68, paddingBottom: 48, gap: 14 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 4 },
-  logo: { width: 56, height: 56, borderRadius: 13 },
-  title: { color: color.text, fontSize: 30, fontWeight: '800', letterSpacing: 0.5 },
-  subtitle: { color: color.muted, fontSize: 13, marginTop: 2 },
-  card: { backgroundColor: color.card, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: color.border, padding: 16, gap: 12 },
-  hero: { backgroundColor: '#1a1012', borderColor: color.emberDeep, paddingVertical: 22, gap: 14 },
-  heroLabel: { color: color.gold, fontSize: 12, fontWeight: '700', letterSpacing: 3 },
-  heroHint: { color: color.muted, fontSize: 13, textAlign: 'center' },
-  tiles: { flexDirection: 'row', gap: 10 },
-  tile: { flex: 1, backgroundColor: color.card, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: color.border, padding: 12, gap: 6 },
-  tileHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  tileLabel: { color: color.muted, fontSize: 11, fontWeight: '600', letterSpacing: 1, textTransform: 'uppercase' },
-  tileValue: { color: color.text, fontSize: 15, fontWeight: '600' },
-  dot: { width: 7, height: 7, borderRadius: 4 },
-  sectionTitle: { color: color.faint, fontSize: 12, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase', marginTop: 10, marginLeft: 4 },
-  cardTitle: { color: color.text, fontSize: 17, fontWeight: '700' },
-  row: { flexDirection: 'row', gap: 10 },
-  button: { flex: 1, backgroundColor: color.raised, borderRadius: 12, paddingVertical: 13, alignItems: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: color.border },
-  buttonPrimary: { backgroundColor: color.ember, borderColor: color.ember, paddingVertical: 18, borderRadius: 14, shadowColor: color.ember, shadowOpacity: 0.45, shadowRadius: 16, shadowOffset: { width: 0, height: 6 } },
-  buttonQuiet: { backgroundColor: 'transparent' },
-  buttonPressed: { opacity: 0.75 },
-  buttonDisabled: { opacity: 0.4 },
-  buttonText: { color: color.text, fontWeight: '600', fontSize: 15 },
-  buttonTextPrimary: { fontSize: 20, fontWeight: '800', letterSpacing: 1 },
-  settingRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 44 },
-  settingText: { flex: 1, gap: 3 },
-  settingTitle: { color: color.text, fontSize: 16, fontWeight: '600' },
-  settingDetail: { color: color.muted, fontSize: 12 },
-  settingValue: { color: color.muted, fontSize: 14, maxWidth: 140 },
-  segmented: { flexDirection: 'row', backgroundColor: color.raised, borderRadius: 10, padding: 3 },
-  segment: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8 },
-  segmentOn: { backgroundColor: color.ember },
-  segmentText: { color: color.muted, fontWeight: '600' },
-  segmentTextOn: { color: '#fff' },
-  collapsibleHead: { flexDirection: 'row', alignItems: 'center' },
-  collapsibleBody: { gap: 12 },
-  chevron: { color: color.muted, fontSize: 18, paddingLeft: 8 },
+  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, height: 460, width: '100%', opacity: 0.55 },
+  backdropFade: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: color.bg },
+  topBar: { paddingTop: 58, paddingHorizontal: 20, paddingBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  brandIcon: { width: 30, height: 30, borderRadius: 8 },
+  brandText: { color: color.text, fontSize: 20, fontWeight: '800', letterSpacing: 1 },
+  topRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  topText: { color: color.text, fontSize: 15 },
+  clock: { color: color.text, fontSize: 16, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  content: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 120, gap: 14 },
+  hero: { flexDirection: 'row', gap: 16, alignItems: 'flex-end' },
+  cover: { width: 132, height: 132, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
+  heroInfo: { flex: 1, gap: 6, paddingBottom: 4 },
+  platform: { color: color.gold, fontSize: 11, fontWeight: '700', letterSpacing: 2 },
+  gameTitle: { color: color.text, fontSize: 24, fontWeight: '800', lineHeight: 28 },
+  pills: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
+  pillText: { color: color.text, fontSize: 12, fontWeight: '600' },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  play: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    backgroundColor: color.ember,
+    borderRadius: 18,
+    paddingVertical: 20,
+    shadowColor: color.ember,
+    shadowOpacity: 0.55,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 8 },
+  },
+  playGlyph: { color: '#fff', fontSize: 22 },
+  playText: { color: '#fff', fontSize: 22, fontWeight: '800', letterSpacing: 1.5 },
+  hint: { color: color.muted, fontSize: 13, textAlign: 'center' },
+  section: { color: color.faint, fontSize: 12, fontWeight: '700', letterSpacing: 2, textTransform: 'uppercase', marginTop: 12 },
+  quickRow: { flexDirection: 'row', gap: 10 },
+  quick: { flex: 1, backgroundColor: color.panel, borderRadius: 16, borderWidth: 1, borderColor: color.border, padding: 12, gap: 4, minHeight: 104 },
+  quickActive: { borderColor: 'rgba(212,65,47,0.6)' },
+  quickTitle: { color: color.faint, fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
+  quickValue: { color: color.text, fontSize: 19, fontWeight: '800' },
+  quickDetail: { color: color.muted, fontSize: 11 },
+  panel: { backgroundColor: color.panel, borderRadius: 18, borderWidth: 1, borderColor: color.border, padding: 16, gap: 8 },
+  panelTitle: { color: color.text, fontSize: 18, fontWeight: '800' },
+  panelSubtitle: { color: color.muted, fontSize: 12 },
+  panelBody: { gap: 12, marginTop: 6 },
   body: { color: color.muted, fontSize: 14, lineHeight: 20 },
+  row: { flexDirection: 'row', gap: 10 },
+  button: { flex: 1, backgroundColor: color.raised, borderRadius: 12, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: color.border },
+  buttonQuiet: { backgroundColor: 'transparent' },
+  buttonText: { color: color.text, fontWeight: '600', fontSize: 15 },
+  pressed: { opacity: 0.75, transform: [{ scale: 0.98 }] },
+  disabled: { opacity: 0.4 },
   pairing: { gap: 8, padding: 14, borderRadius: 12, backgroundColor: color.raised },
   pin: { color: color.text, fontFamily: 'Menlo', fontSize: 40, fontWeight: '700', letterSpacing: 6, textAlign: 'center' },
   warn: { color: color.warn, fontSize: 12 },
@@ -510,8 +557,24 @@ const styles = StyleSheet.create({
   fileMark: { fontSize: 15, fontWeight: '800', width: 16, textAlign: 'center' },
   fileName: { color: color.text, fontFamily: 'Menlo', fontSize: 13, flex: 1 },
   fileHint: { color: color.faint, fontSize: 12 },
-  mono: { backgroundColor: '#0f0f13', borderRadius: 10, padding: 10, gap: 6 },
+  mono: { backgroundColor: 'rgba(12,12,16,0.95)', borderRadius: 12, padding: 12, gap: 6, borderWidth: 1, borderColor: color.border },
   monoTitle: { color: color.gold, fontSize: 11, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase' },
   monoText: { color: '#cfcdd6', fontFamily: 'Menlo', fontSize: 10.5 },
-  footer: { color: color.faint, fontSize: 11, textAlign: 'center', marginTop: 16, lineHeight: 16 },
+  tabBar: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 26,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(18,18,24,0.96)',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: color.border,
+    paddingVertical: 8,
+  },
+  tab: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: 4 },
+  tabGlyph: { color: color.faint, fontSize: 20 },
+  tabLabel: { color: color.faint, fontSize: 11, fontWeight: '700' },
+  tabActive: { color: color.text },
+  tabMark: { width: 18, height: 3, borderRadius: 2, backgroundColor: color.ember, marginTop: 3 },
 });

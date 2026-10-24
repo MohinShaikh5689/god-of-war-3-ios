@@ -419,7 +419,9 @@ public class Gow3CoreModule: Module {
       func exists(_ name: String) -> Bool { FileManager.default.fileExists(atPath: root.appendingPathComponent(name).path) }
       return ["folder": "Documents/gow3", "boot": exists("boot-linked.bin"), "content": exists("content.bin"),
               "patches": exists("patches.bin"), "eboot": exists("game/eboot.bin"), "sfo": exists("game/sce_sys/param.sfo"),
-              "started": Gow3CoreModule.gameStarted]
+              "started": Gow3CoreModule.gameStarted,
+              // The dump's own cover (sce_sys/icon0.png) for the launcher's game tile; empty without one.
+              "cover": exists("game/sce_sys/icon0.png") ? root.appendingPathComponent("game/sce_sys/icon0.png").absoluteString : ""]
     }
 
     /// Starts the game CPU-only: the loader maps the eboot, links it against the runtime and runs it
