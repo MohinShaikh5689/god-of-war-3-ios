@@ -121,6 +121,12 @@ tiles, Settings with the FPS cap and the on-screen controls switch, collapsible 
 all developer tools under Advanced > Developer); display name "Olympus" (CFBundleDisplayName only: the
 project, bundle id and pairing host name stay gow3/gow3-ios); new icon (native/scripts/icon/make_icon.py);
 a Menu button on the touch controls opens the settings/cheats menu (bit 0x20000000, replayed as L2+R3).
+**0.1.45 on the device (2026-10-25):** no crash in ~15+ min through the Poseidon fight (0x199239 had hit 6 times
+before; the x18 fix holds). FPS over the session: median 25, p90 33, min 12.7. GPU profile mode 3 on 0.1.44
+(heavy opening, 38 windows): no hotspot; GPU time is spread over hundreds of shader pairs (largest ~0.7 ms per
+frame; bloom 533x300 pass ~1.7 ms), GPU idle ~1.7 ms. With the 480p result, the main pass cost is per draw or
+per vertex, not per pixel or one shader. Next: a live toggle that discards rasterization (or makes fragment
+shaders trivial) in the main pass, to split vertex/draw cost from fragment cost.
 
 **FIXED (2026-10-24): texture corruption.** 0.1.40 showed every misplaced BC texture under large linear
 R32G32B32A32Uint storage images (4096x80..4096x160, the game's GPU texture moves, as SpartanPort #331 says),
