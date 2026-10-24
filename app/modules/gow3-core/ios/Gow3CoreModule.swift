@@ -201,6 +201,9 @@ public class Gow3CoreModule: Module {
     // in Hades (0.1.38 profile). Off, heavy scenes went from 10-22 to 17-21 FPS, light ones 30 -> 41.
     setenv("GOW3_UPSCALER", "off", 0)
     setenv("GOW3_OBJECT_MOTION", "0", 0)
+    // MoltenVK binds descriptor sets directly, not through Metal argument buffers: every resource read
+    // of every shader got cheaper. Same scenes on 0.1.45: 28 -> 40 FPS light, 25 -> 29 medium, 20.5 -> 26 heavy.
+    setenv("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", "0", 0)
     // With graphics, no new frame for 60 s dumps the threads to the log, and 180 s ends the app
     // (gow3_start.c), so a hung game does not keep the CPU busy and the phone hot.
     if !cpuOnly { setenv("GOW3_FRAME_WATCHDOG", "60", 0) }

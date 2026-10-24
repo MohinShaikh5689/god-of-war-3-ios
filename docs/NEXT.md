@@ -127,6 +127,11 @@ before; the x18 fix holds). FPS over the session: median 25, p90 33, min 12.7. G
 frame; bloom 533x300 pass ~1.7 ms), GPU idle ~1.7 ms. With the 480p result, the main pass cost is per draw or
 per vertex, not per pixel or one shader. Next: a live toggle that discards rasterization (or makes fragment
 shaders trivial) in the main pass, to split vertex/draw cost from fragment cost.
+**FPS win (2026-10-25, no-build test on 0.1.45):** `MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS=0` (MoltenVK binds
+descriptors as discrete resource indexes instead of Metal 3 argument buffers). Median FPS by scene load vs the
+0.1.45 run: 300-1000 draws 28.1 -> 40.3, 1000-1800 25.4 -> 29.4, 1800+ 20.5 -> 25.9. No new errors (the
+"Float4 to int4" warm-up pipeline failures predate it). 0.1.46 sets it by default (Gow3CoreModule.swift).
+Next MoltenVK/driver-level candidates: the remaining per-draw cost (7-8 us/draw from the 0.1.45 fit).
 
 **FIXED (2026-10-24): texture corruption.** 0.1.40 showed every misplaced BC texture under large linear
 R32G32B32A32Uint storage images (4096x80..4096x160, the game's GPU texture moves, as SpartanPort #331 says),
