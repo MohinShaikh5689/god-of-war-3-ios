@@ -204,6 +204,12 @@ public class Gow3CoreModule: Module {
     // MoltenVK binds descriptor sets directly, not through Metal argument buffers: every resource read
     // of every shader got cheaper. Same scenes on 0.1.45: 28 -> 40 FPS light, 25 -> 29 medium, 20.5 -> 26 heavy.
     setenv("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", "0", 0)
+    // FEX without x86 memory-ordering (TSO) emulation, as the Android port runs this game
+    // (android/runtime/fex-config.json): cheaper loads and stores in the translated code. It crashed
+    // on 0.1.35, which was the x18 bug (fixed in 0.1.45); on 0.1.45 the worst-frame p90 fell 83 -> 54 ms.
+    for name in ["FEX_TSOENABLED", "FEX_VECTORTSOENABLED", "FEX_MEMCPYSETTSOENABLED", "FEX_HALFBARRIERTSOENABLED"] {
+      setenv(name, "0", 0)
+    }
     // With graphics, no new frame for 60 s dumps the threads to the log, and 180 s ends the app
     // (gow3_start.c), so a hung game does not keep the CPU busy and the phone hot.
     if !cpuOnly { setenv("GOW3_FRAME_WATCHDOG", "60", 0) }
@@ -451,14 +457,14 @@ public class Gow3CoreModule: Module {
     }.runOnQueue(.main)
 
     /// The frame cap in Documents/gow3/user/gow3.ini (the in-game menu's setting, read at game start):
-    /// 30 or 60, 0 for none. The iOS default is 60.
+    /// 30 or 60, 0 for none. The iOS default is 30.
     Function("fpsLimit") { () -> Int in
       let ini = Gow3CoreModule.gameRoot.appendingPathComponent("user/gow3.ini")
       let text = (try? String(contentsOf: ini, encoding: .utf8)) ?? ""
       for line in text.split(separator: "\n") where line.hasPrefix("fps_limit=") {
-        return Int(line.dropFirst("fps_limit=".count).trimmingCharacters(in: .whitespaces)) ?? 60
+        return Int(line.dropFirst("fps_limit=".count).trimmingCharacters(in: .whitespaces)) ?? 30
       }
-      return 60
+      return 30
     }
 
     Function("setFpsLimit") { (limit: Int) in

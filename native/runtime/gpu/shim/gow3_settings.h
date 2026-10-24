@@ -65,10 +65,10 @@ struct Values {
     std::atomic<int> display_mode{0};
     std::atomic<bool> vsync{true};
 #if defined(__APPLE__) && TARGET_OS_IOS
-    // gow3 (iOS): 60 (the game's own rate). Without a cap the GPU runs flat out and the phone
-    // heats up fast; 30 kept light scenes at 30 though they reach 40-60 (2026-10-24). gow3.ini
-    // fps_limit= or the menu changes it.
-    std::atomic<int> fps_limit{60};
+    // gow3 (iOS): 30, as the Android port ships: heavy scenes run 20-28, so a 60 cap only made the
+    // frame rate swing; at 30 a session held a 28.8 median with no sample under 21 (2026-10-25).
+    // The launcher, gow3.ini fps_limit= or the menu changes it (60 or none for testing).
+    std::atomic<int> fps_limit{30};
 #else
     std::atomic<int> fps_limit{0};
 #endif

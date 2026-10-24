@@ -16,8 +16,8 @@ const listControllers = () => (typeof Gow3Core.controllers === 'function' ? Gow3
 const hasTouchControls = typeof Gow3Core.touchControlsEnabled === 'function';
 const hasFpsLimit = typeof Gow3Core.fpsLimit === 'function';
 const FPS_LIMITS: Array<[number, string]> = [
-  [60, '60'],
   [30, '30'],
+  [60, '60'],
   [0, 'Off'],
 ];
 
@@ -163,7 +163,7 @@ export default function App() {
   const [files, setFiles] = useState(() => Gow3Core.gameFiles());
   const [gameLog, setGameLog] = useState(() => Gow3Core.readGameLog());
   const [gpuReport, setGpuReport] = useState('');
-  const [fpsLimit, setFpsLimit] = useState(() => (hasFpsLimit ? Gow3Core.fpsLimit() : 60));
+  const [fpsLimit, setFpsLimit] = useState(() => (hasFpsLimit ? Gow3Core.fpsLimit() : 30));
   const [touchControls, setTouchControls] = useState(() => (hasTouchControls ? Gow3Core.touchControlsEnabled() : false));
   const [jitOpen, setJitOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
@@ -305,7 +305,7 @@ export default function App() {
         <SectionTitle>Settings</SectionTitle>
         <Card>
           {hasFpsLimit ? (
-            <SettingRow title="Frame rate cap" detail={files.started ? 'Applies at the next start' : '30 is cooler and steadier'}>
+            <SettingRow title="Frame rate cap" detail={files.started ? 'Applies at the next start' : '30 is steadier and cooler; 60 for light scenes'}>
               <Segmented
                 options={FPS_LIMITS}
                 value={fpsLimit}

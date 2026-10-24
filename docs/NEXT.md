@@ -132,6 +132,10 @@ descriptors as discrete resource indexes instead of Metal 3 argument buffers). M
 0.1.45 run: 300-1000 draws 28.1 -> 40.3, 1000-1800 25.4 -> 29.4, 1800+ 20.5 -> 25.9. No new errors (the
 "Float4 to int4" warm-up pipeline failures predate it). 0.1.46 sets it by default (Gow3CoreModule.swift).
 Next MoltenVK/driver-level candidates: the remaining per-draw cost (7-8 us/draw from the 0.1.45 fit).
+**TSO off works now (test B, 0.1.45 + argument buffers off, 30 cap):** Android's FEX TSO settings (all four off)
+crashed on 0.1.35 (that was the x18 bug); now they run: worst-frame p90 83 -> 54 ms, no sample under 21 FPS (7%
+before), median 28.8 at the 30 cap. 0.1.46 defaults: TSO off, fps_limit 30. Left for a constant 30: heavy fights
+(~2250 draws, ~19 FPS uncapped) need ~35-40% more GPU; frames with 9+ new images / ~27 MB uploads hitch.
 
 **FIXED (2026-10-24): texture corruption.** 0.1.40 showed every misplaced BC texture under large linear
 R32G32B32A32Uint storage images (4096x80..4096x160, the game's GPU texture moves, as SpartanPort #331 says),
