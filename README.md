@@ -14,6 +14,10 @@ based on the PC port [gow3_pc](https://github.com/FelipePrado0/gow3_pc).
 >
 > **No game files are included, and none will be.** You need your own legal dump of the game.
 
+![God of War III running on an iPhone 17 with the on-screen controls](docs/media/gameplay.png)
+
+**Gameplay recording (iPhone 17):** [docs/media/gameplay.mp4](docs/media/gameplay.mp4)
+
 ## Contents
 - [Features](#features)
 - [Project status](#project-status)
@@ -75,7 +79,7 @@ The remaining limit is GPU time per draw in heavy scenes; progress is tracked in
 - **JIT**: the built-in helper with LocalDevVPN (App Store), or [StikDebug](https://github.com/StikDebug/StikDebug).
 - **Your own dump of God of War III Remastered**: CUSA01623, CUSA01715 or CUSA01720, with update 01.02
   (about 35 GB free on the iPhone).
-- For now, `boot-linked.bin` from gow3's `scripts/prepare.py`, run on a PC.
+- For now, a PC (any OS with Python 3.10+) to make three small files from the dump with [tools/prepare](tools/prepare).
 
 ## Install on iPhone (sideload)
 1. Download the IPA: Actions tab, **iOS IPA** workflow, latest successful run, artifact
@@ -94,13 +98,77 @@ iOS only allows JIT for an app a debugger has attached to. gow3-ios brings its o
 Details and limits: [docs/JIT.md](docs/JIT.md).
 
 ## Add your game files
-Copy into **Files > On My iPhone > Olympus > gow3**:
-- `boot-linked.bin`, `content.bin`, `patches.bin` (from gow3's `out/` folder on the PC);
-- `game/`: the whole dumped game folder (`eboot.bin`, `sce_module/`, `sce_sys/`, `EXEC/`, `ENGLISH/`,
-  `*.plt`) with the 01.02 update's `.plt` files on top.
+Everything goes into one folder: **Files > On My iPhone > Olympus > gow3** (the app's
+`Documents/gow3`). Open the app once so the folder exists. It must look like this:
 
-The game folder is about 30 GB. From Linux, `ifuse --documents <bundle id>` mounts the app's folder
-(libimobiledevice); from Windows, iMazing works. Then tap **Play**.
+```
+Olympus/
+└── gow3/
+    ├── boot-linked.bin      made on the PC by tools/prepare
+    ├── content.bin          made by tools/prepare
+    ├── patches.bin          made by tools/prepare
+    └── game/                your dumped game folder, renamed to "game"
+        ├── eboot.bin
+        ├── sce_module/
+        ├── sce_sys/
+        │   ├── param.sfo
+        │   └── icon0.png    (shown as the cover in the launcher)
+        ├── EXEC/
+        ├── ENGLISH/         (or your dump's language folders)
+        └── *.plt
+```
+
+On the iPhone it looks like this (the gow3 folder also shows the app's own `user/` and `loader.log`;
+the other extra files in this screenshot are test files and not needed):
+
+<p>
+  <img src="docs/media/files-olympus.png" alt="Files app: On My iPhone > Olympus with the gow3 folder" width="260">
+  <img src="docs/media/files-gow3.png" alt="Files app: the gow3 folder with boot-linked.bin, content.bin, patches.bin, game and user" width="260">
+</p>
+
+How to get there:
+1. **Merge the 01.02 update** into the base game on the PC: copy the update's files over the base
+   dump, replacing the old ones (its `eboot.bin`, `sce_sys/` and `.plt` files).
+2. **Make the three `.bin` files** on the PC with [tools/prepare](tools/prepare) in this repo
+   (Python 3.10+, standard library only; Windows, Linux or macOS), run on the *merged* dump:
+   ```sh
+   git clone --depth 1 https://github.com/MohinShaikh5689/god-of-war-3-ios gow3-ios   # or download the ZIP
+   python3 gow3-ios/tools/prepare/make_gow3_folder.py /path/to/CUSA01623 --out gow3
+   ```
+   This writes `boot-linked.bin`, `content.bin` and `patches.bin` into `gow3/`. Add `--copy-game`
+   to also copy the dump into `gow3/game`, and the finished `gow3/` folder can then be copied to the
+   iPhone as it is. On Windows, use `python` instead of `python3`.
+
+   <details><summary>Doing it by hand</summary>
+
+   The tool runs gow3_android's scripts (copied in `tools/prepare/scripts`) in this order, as the PC
+   port's `run.py` does:
+   ```sh
+   cd gow3-ios/tools/prepare
+   GAME=/path/to/CUSA01623
+   python3 scripts/prepare.py         "$GAME" --out out
+   python3 scripts/link_libc.py       "$GAME" --out out
+   python3 scripts/link_modules.py    "$GAME" --out out   # out/boot-linked.bin
+   python3 scripts/content_profile.py "$GAME" --out out   # out/content.bin
+   python3 scripts/patches.py --game-dir "$GAME" --out out   # out/patches.bin
+   ```
+   Then copy those three files from `out/` into `gow3/`. If you already play the PC or Android port,
+   its `out/` folder has the same three files.
+   </details>
+3. **Copy the game**: rename the merged dump folder (for example `CUSA01623`) to `game` and copy it
+   into `gow3/`. `eboot.bin` must be at `gow3/game/eboot.bin`: a `game/CUSA01623/eboot.bin` one level
+   too deep is the most common mistake.
+
+Redo step 2 whenever the dump's `eboot.bin` changes (another region or update). Making these files
+on the phone itself is planned, so the PC step can go away.
+
+The app creates the rest itself: `user/` (saves and `gow3.ini`, the in-game settings) and
+`loader.log`. Don't delete `user/` when you replace the game files, or the saves go with it.
+The game folder is about 30 GB; it is excluded from iCloud and computer backups, `user/` is not.
+
+Copying: from Linux, `ifuse --documents <bundle id>` mounts the app's folder (libimobiledevice);
+from Windows, iMazing works; on a Mac, Finder's file sharing. The launcher's **Setup > Game files**
+panel shows which files are still missing. Then tap **Play**.
 
 ## Playing
 - **Controls**: connect a controller in Settings > Bluetooth, or use the on-screen controls (they hide
