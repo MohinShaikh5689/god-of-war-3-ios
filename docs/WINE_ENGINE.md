@@ -94,6 +94,25 @@ Its `docs/BUILDING.md` marks most steps unverified from a clean checkout. Found 
    memory lessons) and performance.
 6. **Steam client (optional)**: Valve's Windows Steam client in the prefix, from `madeira-dock`.
 
+## Per-game notes (from Madeira's sources, 2026-10-25)
+Madeira has built-in settings lists only for RDR2, GTA V Enhanced, Ghost of Tsushima, God of War and
+Horizon Zero Dawn (`app/Madeira/GameRecommendations.swift`); every other game gets the "standard" list, which
+only turns a diagnostic trace off. The per-launch settings its library applies are defaults our session
+already gets: Fastsync (`WineProcessBridge.m` exports `MADEIRA_FASTSYNC=auto` itself), the 60 FPS present
+lock (`g_madeira_vsync_mode = 1` in DXMT), AVX off, no NVIDIA identity.
+- **Silksong** (Unity, 64-bit D3D11): no list needed. Madeira's code has run Hollow Knight (about 2.2 GB,
+  `signal_arm64_ios.c`) and handles Unity's quirks itself (`UnityCrashHandler64.exe` is skipped,
+  `process_ios.c`). Start the game's own `.exe`, not `UnityCrashHandler64.exe`.
+- **Sekiro** (FromSoftware, 64-bit D3D11): no list either, but Madeira has run Dark Souls III and Dark
+  Souls Remastered, the same engine family. Touch must not reach the game as a mouse while a controller is
+  used (Dark Souls Remastered switches to keyboard-and-mouse prompts and then ignores the pad;
+  `docs/CONTROLLERS.md`): the Windows view sends no touches while a controller is connected. Win32u's
+  foreground fix (on by default) covers games that read input only when their window is in front.
+  Later tuning in `Documents/madeira.cfg`: `env.MADEIRA_THREAD_QOS = GXWorker*=user-initiated;FD4JobWorker*=utility`
+  (made for Dark Souls III's worker threads), and the memory switches of Madeira's example config
+  (`docs/madeira.cfg.example`: `swap-mb` file-backed guest memory, `totalphys`, `vram-mb`, `pool`), all off
+  or default without a `madeira.cfg`; set them from Sekiro's first logs, not before.
+
 ## Risks
 - **Steam client**: a heavy Chromium-based program, another memory cost on 8 GB if phase 6 happens.
 - **Memory**: a 64-bit D3D11 game through Wine and FEX on 8 GB; Madeira's "Memory+" entitlement

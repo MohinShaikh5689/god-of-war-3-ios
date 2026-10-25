@@ -208,8 +208,11 @@ final class Gow3WineGameViewController: UIViewController {
 
   // MARK: Touch: one finger is the mouse, its position in guest pixels.
 
+  /// Not while a controller is connected: some games switch to keyboard-and-mouse prompts at any mouse
+  /// event and then ignore the pad (Dark Souls Remastered, Madeira's docs/CONTROLLERS.md), as FromSoftware's
+  /// Sekiro may. Madeira also keeps stray touches off the mouse while its controller layout shows.
   private func guestPoint(_ touch: UITouch) -> (Int32, Int32)? {
-    guard let engine else { return nil }
+    guard let engine, !GCController.controllers().contains(where: { $0.extendedGamepad != nil }) else { return nil }
     let (gw, gh) = engine.screenSize
     guard gw > 0, gh > 0 else { return nil }
     let b = view.bounds
