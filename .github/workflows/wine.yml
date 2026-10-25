@@ -1,7 +1,8 @@
-name: Wine engine (iOS libraries)
+name: Wine engine (iOS libraries and WineCore.framework)
 
-# Phase 1 of docs/WINE_ENGINE.md: build Madeira's iOS-side static libraries (FEXCore, the Wine unix
-# side and wineserver, DXMT with LLVM 15, FFmpeg, GnuTLS) from a clean checkout. Every stage runs and
+# Phases 1 and 2 of docs/WINE_ENGINE.md: build Madeira's iOS-side static libraries (FEXCore, the Wine
+# unix side and wineserver, DXMT with LLVM 15, FFmpeg, GnuTLS) from a clean checkout, then
+# WineCore.framework from Madeira's engine sources linked against them. Every stage runs and
 # logs even when an earlier one failed, so one run shows every error.
 
 on:
@@ -125,3 +126,9 @@ jobs:
         with:
           name: wine-ios-libs
           path: native/wine/out/lib
+
+      - name: Framework
+        uses: actions/upload-artifact@v4
+        with:
+          name: WineCore-framework
+          path: native/wine/out/WineCore.framework

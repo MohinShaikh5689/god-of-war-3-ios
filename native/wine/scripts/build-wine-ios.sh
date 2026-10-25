@@ -190,7 +190,60 @@ stage_collect() {
     ls -l "$OUT/lib"
 }
 
-STAGES=(mingw freetype winehost gnutls ffmpeg fex ntdll win32u wineserver llvm dxmt collect)
+# WineCore.framework: Madeira's engine sources (app/Madeira's C and Objective-C, and StikJITHelper.swift,
+# all unchanged) with native/wine/src, linked as one dynamic framework against out/lib. Compiled -O0
+# like Madeira's Debug configuration, the one it runs games with (its Release builds crashed the guest);
+# the heavy code is in the -O2 libraries.
+stage_framework() {
+    local a="$M/app/Madeira" src="$ROOT/native/wine/src" obj="$OUT/framework-obj" fw="$OUT/WineCore.framework"
+    local fex="$M/FEX"
+    rm -rf "$obj" "$fw" && mkdir -p "$obj" "$fw"
+    local common=(-arch arm64 -isysroot "$SDK" -miphoneos-version-min=17.0 -O0 -g -DDEBUG=1 -fmodules
+        -I"$a" -I"$a/Winios" -I"$ROOT/native/wine/include"
+        -I"$fex/FEXCore/include" -I"$fex/FEXHeaderUtils" -I"$fex/CodeEmitter" -I"$fex/External/fmt/include"
+        -I"$fex/External/range-v3/include" -I"$fex/External/unordered_dense/include" -I"$fex/build-ios"
+        -I"$fex/build-ios/include" -I"$fex/build-ios/FEXCore/Source" -I"$fex")
+    local f name
+    for f in FEXBridge.mm JITAllocator.c IOSDisplayShim.m WineServerBridge.m WineProcessBridge.m PadOutput.m \
+             PrefixExtractor.c wine_stubs.c Winios/Winios.m Winios/WiniosCursor.c Winios/WiniosGamepad.c; do
+        name=$(basename "$f"); name=${name%.*}
+        case "$f" in
+            *.c)  xcrun -sdk iphoneos clang "${common[@]}" -std=gnu11 -c "$a/$f" -o "$obj/$name.o" ;;
+            *.m)  xcrun -sdk iphoneos clang "${common[@]}" -fobjc-arc -c "$a/$f" -o "$obj/$name.o" ;;
+            *.mm) xcrun -sdk iphoneos clang++ "${common[@]}" -std=gnu++20 -fobjc-arc -c "$a/$f" -o "$obj/$name.o" ;;
+        esac
+    done
+    xcrun -sdk iphoneos swiftc -target arm64-apple-ios17.0 -sdk "$SDK" -module-name WineCore -parse-as-library \
+        -Onone -g -wmo -emit-object -o "$obj/swift.o" -import-objc-header "$src/WineCore-Bridging.h" \
+        -Xcc -I"$a" -Xcc -I"$a/Winios" "$a/StikJITHelper.swift" "$src"/*.swift
+    xcrun -sdk iphoneos swiftc -target arm64-apple-ios17.0 -sdk "$SDK" -emit-library -o "$fw/WineCore" \
+        -Xlinker -install_name -Xlinker @rpath/WineCore.framework/WineCore \
+        "$obj"/*.o "$OUT"/lib/*.a -lc++ -lz -llzma -lsqlite3 -lresolv \
+        -framework Foundation -framework UIKit -framework QuartzCore -framework Metal -framework MetalFX \
+        -framework CoreFoundation -framework AudioToolbox -framework CoreMedia -framework CoreVideo \
+        -framework VideoToolbox -framework IOKit -framework GameController -framework CoreHaptics \
+        -framework AVFoundation -framework IOSurface -framework CoreGraphics
+    cat > "$fw/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key><string>WineCore</string>
+  <key>CFBundleIdentifier</key><string>com.gow3ios.app.WineCore</string>
+  <key>CFBundleName</key><string>WineCore</string>
+  <key>CFBundlePackageType</key><string>FMWK</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
+  <key>MinimumOSVersion</key><string>17.0</string>
+</dict>
+</plist>
+PLIST
+    cp "$ROOT/native/wine/include/winecore.h" "$fw/"
+    ls -l "$fw"
+}
+
+STAGES=(mingw freetype winehost gnutls ffmpeg fex ntdll win32u wineserver llvm dxmt collect framework)
 [ $# -gt 0 ] && STAGES=("$@")
 failed=()
 for s in "${STAGES[@]}"; do

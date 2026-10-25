@@ -51,9 +51,26 @@ Its `docs/BUILDING.md` marks most steps unverified from a clean checkout. Found 
    three runs, then 9 minutes with the caches (LLVM, the tarball dependencies, ccache). Beyond the four
    inputs above, the fixes were FEX's configure for iOS (`CMAKE_SYSTEM_PROCESSOR`, `TUNE_CPU=none`), only
    LLVM's libraries (its tools fail to link for iOS), and airconv's three embedded AIR shader headers.
-2. **WineCore.framework**: the bridge sources plus the libraries as one dynamic framework with a C API
-   (start wineserver, init the prefix, run an `.exe` with arguments, attach a `CAMetalLayer` view,
-   input, stop). Exit: a D3D11 test program from `Madeira/tests/dxmt` draws on the iPhone.
+2. **WineCore.framework**: Madeira's engine as one dynamic framework with the C API in
+   `native/wine/include/winecore.h`. IN PROGRESS. Steps:
+   - a. **Builds and links on CI** (`framework` stage, artifact `WineCore-framework`): Madeira's C and
+     Objective-C engine sources and its `StikJITHelper.swift` (the JIT pool), all unchanged, plus
+     `native/wine/src`: `MadeiraShims.swift` (the three app types the pool code uses: `LogStore`,
+     `MadeiraConfig`, `SigningStatus`) and `WineSession.swift` (`winecore_start` in the order of Madeira's
+     `runWineFullSequence`: environment, DXMT options, JIT pool, debugger detach, wineserver, process).
+     Compiled `-O0` like Madeira's Debug configuration, the one it runs games with.
+   - b. **In the app**: the framework is embedded but loaded with `dlopen` only for a Windows session.
+     Madeira reserves the low address space a JIT pool and fixed-base `.exe` images need in a constructor
+     (`madeira_early_va_claim` in `JITAllocator.c`: 128 MB at 0x140000000 and up to 1 GB above it) before
+     UIKit and Metal fragment it. So choosing a Windows game records the choice and relaunches; a
+     constructor in the app makes the same reservation for that launch only, and hands it to the framework.
+     Madeira's bundle resources (`arm64ec-windows/`, `aarch64-windows/`, `nls/`, `prefix-template.tar.gz`,
+     `cacert.pem`, `d3d12/`) go to the app bundle's root, where its bridges look for them, by a step after
+     `xcodebuild` like the JIT helper's. Files stay in Madeira's layout: `Documents/wine` (the prefix;
+     games in `drive_c`), `Documents/madeira.cfg`, `Documents/madeira-log.txt`.
+   - c. **Game view**: a view controller like GoW3's with a `CAMetalLayer` (`winecore_set_layer`), touch
+     mapped to the guest monitor (`winios_post_touch_*`), controllers to `winios_gamepad_set_state`.
+   - d. **Exit**: a D3D11 test program from `Madeira/tests/dxmt` draws on the iPhone.
 3. **Gow3Core.framework**: the GoW3 engine moves from the static `libgow3core_all.a` into its own
    framework, so both engines and their FEX copies sit side by side; the Expo module loads the chosen one.
 4. **Console launcher**: the RN home becomes multi-game (tiles, a Windows game import from Files, per-game
