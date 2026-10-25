@@ -21,6 +21,8 @@ for item in arm64ec-windows aarch64-windows i386-windows nls d3d12 prefix-templa
     rm -rf "${APP:?}/$item"
     cp -R "$M/$item" "$APP/"
 done
+# Code pages Madeira does not bundle (native/wine/nls/README.md): Japanese, Chinese, Korean, Cyrillic, ...
+cp "$ROOT"/native/wine/nls/*.nls "$APP/nls/"
 mkdir -p "$APP/Madeira-licenses"
 cp -R "$M/legal" "$M/licenses" "$APP/Madeira-licenses/"
 cp "$ROOT/native/third_party/Madeira/LICENSE" "$ROOT/native/third_party/Madeira/LICENSE-EXCEPTION.md" \
