@@ -110,6 +110,13 @@ Its `docs/BUILDING.md` marks most steps unverified from a clean checkout. Found 
    the early claim ("Prepare launch"): a plain start found app memory already at 0x140000000 and Madeira refused
    to place the pool ("BAD POOL"). The pool came out at 544 MB (largest gap). Next: Play should make the early
    claim itself (arm, ask for one reopen), and per-game Steam identity instead of a global one.
+   Performance, first gameplay log: 13-17 FPS at the 30 cap, GPU about 20% busy, FEX code cache 98% hits; CPU
+   bound, with FromSoftware's five job workers half on the efficiency cores, and iOS compressing 1.9 GB at a
+   5 GB footprint (limit about 6 GB). Tried Madeira's example memory lines (`swap-mb = 3072`,
+   `env.MADEIRA_SWAP_COVERAGE = broad`, `totalphys = 4096`, `vram-mb = 1536`): worse. "broad" file-backed whole
+   1.5-1.8 GB reservations, Sekiro went black after its first screens and Silksong loaded very slowly. Reverted.
+   Next experiments, one at a time: `env.MADEIRA_THREAD_QOS` (Dark Souls III's worker-thread classes), the
+   classic swap coverage with a smaller cap, FEX TSO off (GoW3's biggest win; riskier for multithreaded games).
 6. **Steam client (optional)**: Valve's Windows Steam client in the prefix, from `madeira-dock`.
 
 ## Per-game notes (from Madeira's sources, 2026-10-25)
