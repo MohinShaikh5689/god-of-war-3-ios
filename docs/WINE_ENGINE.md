@@ -77,9 +77,12 @@ Its `docs/BUILDING.md` marks most steps unverified from a clean checkout. Found 
      Written for 0.2.0 (`app/modules/gow3-core/ios/Gow3WineEngine.swift`, the System tab's "Windows engine
      (test)" panel). The JIT flow is GoW3's (built-in helper or StikDebug, same `universal.js`: Madeira's
      pool uses the same `brk #0xf00d` requests); only the step run while the debugger is attached differs
-     (`winecore_start` instead of `gow3_jit_setup`). First version without the relaunch: the framework is
-     loaded at session start and its own constructor makes Madeira's early reservation then; the relaunch
-     comes if the logs show the pool squeezed. GoW3's FEX (in the app) and WineCore's share a commit; the
+     (`winecore_start` instead of `gow3_jit_setup`). Both ways of getting Madeira's early reservation are in
+     0.2.0, so one build can try both: a plain start (the framework's own constructor claims when it is
+     loaded, late), and "Prepare launch" (the panel writes `Documents/wine/.early-claim`; at the next launch
+     `Gow3WineEarlyClaim.c`, a constructor in the app, makes the claim before main and the engine's
+     `madeira_early_*` globals take it when the framework loads). `winecore_start` starts a fresh
+     `madeira-log.txt` (the last kept as `madeira-log-prev.txt`) with stderr in it, so the pool's lines are there. GoW3's FEX (in the app) and WineCore's share a commit; the
      one header our patches change (`OpcodeDispatcher.h`) changes signatures, so dyld's weak-symbol
      coalescing cannot mix the two copies' inline code.
    - d. **Exit**: a D3D11 test program from `Madeira/tests/dxmt` draws on the iPhone.

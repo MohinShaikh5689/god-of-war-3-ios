@@ -7,6 +7,9 @@ import Metal
 import QuartzCore
 import UIKit
 
+@_silgen_name("gow3_wine_early_claim_result")
+private func gow3_wine_early_claim_result(_ out: UnsafeMutablePointer<UInt>) -> Int32
+
 final class Gow3WineEngine {
   private typealias Start = @convention(c) (UnsafePointer<CChar>, UnsafePointer<CChar>?, UnsafePointer<CChar>?,
                                             Int32, Int32, Int32) -> Int32
@@ -44,6 +47,20 @@ final class Gow3WineEngine {
   }
 
   private static var loaded: Gow3WineEngine?
+
+  /// Madeira's early address-space claim, made at this launch by Gow3WineEarlyClaim.c when the test panel
+  /// asked for it (Documents/wine/.early-claim): window base and size, pool base and size, intruder base,
+  /// size, tag and protection. nil at a launch without it.
+  static let earlyClaim: [UInt]? = {
+    var out = [UInt](repeating: 0, count: 8)
+    return gow3_wine_early_claim_result(&out) != 0 ? out : nil
+  }()
+
+  /// The next launch makes the early claim (one launch only).
+  static func requestEarlyClaim() throws {
+    try FileManager.default.createDirectory(at: prefix, withIntermediateDirectories: true)
+    try Data().write(to: prefix.appendingPathComponent(".early-claim"))
+  }
   /// The engine, once a Windows session loaded it in this launch (never loads it).
   static var current: Gow3WineEngine? { loaded }
 
@@ -59,6 +76,18 @@ final class Gow3WineEngine {
     guard resourcesPresent else { throw LoadError(description: "This build has no Windows DLLs (arm64ec-windows).") }
     guard let handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL) else {
       throw LoadError(description: "WineCore did not load: " + (dlerror().map { String(cString: $0) } ?? "unknown"))
+    }
+    // The framework's constructor has just tried Madeira's claim itself, too late to get it; with this
+    // launch's early claim, its globals take ours (StikJITHelper releases the pool placeholder they name
+    // just before asking the debugger for the pool).
+    if let claim = earlyClaim {
+      let names = ["madeira_early_window_base", "madeira_early_window_size", "madeira_early_pool_base",
+                   "madeira_early_pool_size", "madeira_early_intruder_base", "madeira_early_intruder_size"]
+      for (i, name) in names.enumerated() {
+        dlsym(handle, name)?.assumingMemoryBound(to: UInt.self).pointee = claim[i]
+      }
+      dlsym(handle, "madeira_early_intruder_tag")?.assumingMemoryBound(to: UInt32.self).pointee = UInt32(claim[6])
+      dlsym(handle, "madeira_early_intruder_prot")?.assumingMemoryBound(to: UInt32.self).pointee = UInt32(claim[7])
     }
     func symbol<T>(_ name: String, type: T.Type) throws -> T {
       guard let address = dlsym(handle, name) else { throw LoadError(description: "WineCore has no \(name).") }

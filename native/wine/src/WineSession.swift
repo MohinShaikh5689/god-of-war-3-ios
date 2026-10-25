@@ -62,6 +62,18 @@ public func winecore_start(_ exe: UnsafePointer<CChar>, _ args: UnsafePointer<CC
     }
     Session.set(1)
 
+    // A fresh Documents/madeira-log.txt per session (the last one kept as madeira-log-prev.txt), and
+    // stderr into it now: the bridges redirect it only when wineserver starts, after the JIT pool, whose
+    // lines would otherwise reach only the system log.
+    let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    let log = docs.appendingPathComponent("madeira-log.txt"), prev = docs.appendingPathComponent("madeira-log-prev.txt")
+    try? FileManager.default.removeItem(at: prev)
+    try? FileManager.default.moveItem(at: log, to: prev)
+    let fd = open(log.path, O_WRONLY | O_CREAT | O_APPEND, 0o644)
+    if fd >= 0 { dup2(fd, STDERR_FILENO); close(fd) }
+    let (sw, sh) = (screenW, screenH)
+    LogStore.shared.log("WineCore session: \(String(cString: exe)) \(sw)x\(sh); early claim: window 0x\(String(madeira_early_window_base, radix: 16)) pool 0x\(String(madeira_early_pool_base, radix: 16)) \(madeira_early_pool_size >> 20) MB")
+
     // What the bridge starts (Library.swift configureLaunch): the program, its arguments, its folder
     // when it is not the program's own, and the virtual monitor (GuestDisplay's MADEIRA_SCREEN_W/H).
     setenv("MADEIRA_EXE", exe, 1)

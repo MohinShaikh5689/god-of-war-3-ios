@@ -157,7 +157,7 @@ function WindowsTest({ locked }: { locked: string | null }) {
         return;
       }
       const code = await Gow3Core.startWindowsGame(exe, '', builtIn);
-      setMessage(code === 0 ? 'Started. Two-finger tap does nothing yet: reopen the app to leave.' : `Did not start (${code}).`);
+      setMessage(code === 0 ? 'Started. To leave, close the app from the app switcher.' : `Did not start (${code}).`);
     } catch (e) {
       setMessage(String(e));
     } finally {
@@ -177,6 +177,11 @@ function WindowsTest({ locked }: { locked: string | null }) {
         <Text style={styles.body}>
           {`Copy a game's folder into Files › ${APP_NAME} › wine › drive_c, then tap its program.`}
         </Text>
+        <Text style={styles.hint}>
+          {status.earlyClaim
+            ? `Early reservation made at this launch: ${status.earlyClaim}.`
+            : 'If a start fails on the JIT pool: Prepare launch, close the app from the app switcher, reopen it, then start again.'}
+        </Text>
         {locked ? <Text style={styles.hint}>{locked}</Text> : null}
         {status.programs.length === 0 ? <Text style={styles.hint}>No .exe found in {status.folder}.</Text> : null}
         {status.programs.map((exe) => (
@@ -186,6 +191,19 @@ function WindowsTest({ locked }: { locked: string | null }) {
         ))}
         <View style={styles.row}>
           <Button title="Look again" onPress={() => setStatus(Gow3Core.windowsStatus())} quiet />
+          <Button
+            title="Prepare launch"
+            onPress={() => {
+              try {
+                Gow3Core.prepareWindowsLaunch();
+                setMessage('Now close Olympus from the app switcher and open it again.');
+              } catch (e) {
+                setMessage(String(e));
+              }
+            }}
+            disabled={live}
+            quiet
+          />
           <Button title="Show log" onPress={() => setLog(Gow3Core.readWindowsLog())} quiet />
         </View>
         {message ? <Text style={styles.hint}>{message}</Text> : null}

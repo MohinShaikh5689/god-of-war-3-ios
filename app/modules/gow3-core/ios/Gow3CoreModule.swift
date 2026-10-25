@@ -434,6 +434,9 @@ public class Gow3CoreModule: Module {
         "framework": Gow3WineEngine.frameworkPath.map { FileManager.default.fileExists(atPath: $0) } ?? false,
         "resources": Gow3WineEngine.resourcesPresent, "folder": "Documents/wine/drive_c",
         "programs": Gow3WineEngine.programs(), "state": 0, "failure": "",
+        "earlyClaim": Gow3WineEngine.earlyClaim.map {
+          "pool \($0[3] >> 20) MB at 0x\(String($0[2], radix: 16)), window \($0[0] != 0 ? "held" : "not held")"
+        } ?? "",
       ]
       // Not loaded here: loading runs its constructors (Madeira's address-space reservation), which only
       // a Windows session may do.
@@ -470,6 +473,12 @@ public class Gow3CoreModule: Module {
         }
       }
     }.runOnQueue(.main)
+
+    /// The next launch reserves the Windows engine's address space before the app starts (Madeira's
+    /// early claim, Gow3WineEarlyClaim.c); the app has to be closed and opened again.
+    Function("prepareWindowsLaunch") {
+      try Gow3WineEngine.requestEarlyClaim()
+    }
 
     /// The last 24 KiB of Documents/madeira-log.txt (Wine, FEX and DXMT write it).
     Function("readWindowsLog") { () -> String in

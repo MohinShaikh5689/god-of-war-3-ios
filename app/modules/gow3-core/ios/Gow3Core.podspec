@@ -17,7 +17,7 @@ Pod::Spec.new do |s|
     'DEFINES_MODULE' => 'YES',
   }
 
-  s.source_files = '*.swift'
+  s.source_files = '*.{swift,c}'
   # Built by native/scripts/build-ios.sh and build-rppairing-ios.sh before `expo prebuild` (CI does this).
   s.vendored_libraries = 'lib/libgow3core_all.a', 'lib/libgow3_rppairing.a'
   s.libraries = 'c++'
