@@ -161,6 +161,15 @@ stage_dxmt() {
     xcrun -sdk iphoneos metal --version >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
     local d="$M/build/dxmt-ios"
     rm -f "$d/libdxmt_combined.a" "$d/libdxmt_unix.a" "$d"/obj/*.err
+    # airconv_context.cpp links three AIR shaders embedded as C arrays; DXMT's meson makes them
+    # (src/airconv/meson.build: metalir_generator, then hexdump_generator), Madeira's script does not.
+    local h="$d/shader-headers" shader name
+    mkdir -p "$h"
+    for shader in "$M"/dxmt/src/airconv/shaders/air_{msad,samplepos,tessellation}.metal; do
+        name=$(basename "$shader" .metal)
+        (cd "$h" && xcrun -sdk macosx metal -std=metal3.1 --target=air64-apple-macos14.0 \
+            -o "$name.air" -c "$shader" && xxd -n "$name" -i "$name.air" "$name.h")
+    done
     if ! bash "$d/build.sh"; then
         local e
         for e in "$d"/obj/*.err; do [ -s "$e" ] && { echo "--- $(basename "$e")"; head -n 40 "$e"; }; done
