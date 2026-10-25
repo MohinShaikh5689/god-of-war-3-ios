@@ -90,6 +90,9 @@ stage_fex() {
             -DCMAKE_DISABLE_FIND_PACKAGE_fmt=ON -DCMAKE_DISABLE_FIND_PACKAGE_unordered_dense=ON \
             -DCMAKE_DISABLE_FIND_PACKAGE_range-v3=ON
     bash "$M/build/fex-ios/build.sh"
+    # FEXCore::Allocator::malloc/free/aligned_alloc/... (Utils/AllocatorHooks.cpp, libc-backed on Apple):
+    # Madeira's app links libJemallocLibs.a, which its script does not build (as native/scripts/build-ios.sh).
+    cmake --build "$b" --target JemallocLibs
 }
 stage_ntdll() { bash "$M/build/ntdll-unix/build.sh"; }
 stage_win32u() { bash "$M/build/win32u-unix/build.sh"; }
