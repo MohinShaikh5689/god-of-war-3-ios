@@ -85,7 +85,13 @@ Its `docs/BUILDING.md` marks most steps unverified from a clean checkout. Found 
      `madeira-log.txt` (the last kept as `madeira-log-prev.txt`) with stderr in it, so the pool's lines are there. GoW3's FEX (in the app) and WineCore's share a commit; the
      one header our patches change (`OpcodeDispatcher.h`) changes signatures, so dyld's weak-symbol
      coalescing cannot mix the two copies' inline code.
-   - d. **Exit**: a D3D11 test program from `Madeira/tests/dxmt` draws on the iPhone.
+   - d. **Exit**: a D3D11 test program from `Madeira/tests/dxmt` draws on the iPhone. DONE differently
+     (2026-10-25, 0.2.0 from 87c593e): **Hollow Knight: Silksong plays on the iPhone 17** at a locked 60 FPS
+     (DXMT's present lock; GPU 22% busy, 3.7 ms a frame; FEX code cache 94% hits). The first try failed only on
+     the test panel's path bug (`C:\drive_c\...`, fixed in 533c091; on the phone the game was moved to
+     `drive_c/drive_c/Silksong` with a placeholder `.exe` at the old place until the next build). The plain
+     start was enough: the framework's own constructor still got the 0x140000000 window at load, and Madeira
+     shrank the pool to 624 MB to fit.
 3. **Gow3Core.framework**: the GoW3 engine moves from the static `libgow3core_all.a` into its own
    framework, so both engines and their FEX copies sit side by side; the Expo module loads the chosen one.
 4. **Console launcher**: the RN home becomes multi-game (tiles, a Windows game import from Files, per-game

@@ -84,4 +84,5 @@ Expo (React Native) app shell: launcher, dump import via Files app, settings, JI
    Plan, decisions (two frameworks, one engine per launch, Steam client later, RN console launcher) and the
    Madeira inputs its docs don't record: docs/WINE_ENGINE.md. Madeira is `native/third_party/Madeira`;
    its iOS libraries build with `native/wine/scripts/build-wine-ios.sh` (CI `.github/workflows/wine.yml`).
-   Phase 1 (the iOS libraries from a clean checkout) DONE 2026-10-25; next: WineCore.framework.
+   Phase 1 (the iOS libraries from a clean checkout) DONE 2026-10-25. Phase 2: WineCore.framework is in the app
+   (0.2.0, System tab test panel); Hollow Knight: Silksong plays on the iPhone 17 at 60 FPS (2026-10-25).
