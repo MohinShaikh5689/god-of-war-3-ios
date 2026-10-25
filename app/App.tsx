@@ -126,6 +126,75 @@ function Mono({ title, text }: { title: string; text: string }) {
   );
 }
 
+const WINDOWS_STATES: Record<number, string> = { [-1]: 'Failed', 0: 'Not started', 1: 'Starting', 2: 'Running', 3: 'Exited' };
+
+/** Phase 2 test screen for the Windows engine (docs/WINE_ENGINE.md): start a program copied into
+ *  Documents/wine/drive_c. One engine per launch, so it is locked once GoW3 used JIT or started. */
+function WindowsTest({ locked }: { locked: string | null }) {
+  const [status, setStatus] = useState(() => Gow3Core.windowsStatus());
+  const [log, setLog] = useState('');
+  const [message, setMessage] = useState('');
+  const [starting, setStarting] = useState(false);
+  const live = status.state === 1 || status.state === 2;
+
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => {
+      setStatus(Gow3Core.windowsStatus());
+      setLog(Gow3Core.readWindowsLog());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [live]);
+
+  const start = async (exe: string) => {
+    setStarting(true);
+    setMessage(`Starting ${exe}…`);
+    try {
+      const jit = await Gow3Core.builtInJitStatus();
+      const builtIn = Gow3Core.isDebuggerAttached() || (jit.available && jit.paired);
+      if (!builtIn && !(await Gow3Core.isStikDebugInstalled())) {
+        setMessage('JIT: pair this iPhone (Setup) or install StikDebug.');
+        return;
+      }
+      const code = await Gow3Core.startWindowsGame(exe, '', builtIn);
+      setMessage(code === 0 ? 'Started. Two-finger tap does nothing yet: reopen the app to leave.' : `Did not start (${code}).`);
+    } catch (e) {
+      setMessage(String(e));
+    } finally {
+      setStatus(Gow3Core.windowsStatus());
+      setLog(Gow3Core.readWindowsLog());
+      setStarting(false);
+    }
+  };
+
+  const ready = status.framework && status.resources;
+  return (
+    <>
+      <Panel
+        title="Windows engine (test)"
+        subtitle={ready ? `${WINDOWS_STATES[status.state] ?? status.state}${status.failure ? `: ${status.failure}` : ''}` : 'Not in this build'}
+      >
+        <Text style={styles.body}>
+          {`Copy a game's folder into Files › ${APP_NAME} › wine › drive_c, then tap its program.`}
+        </Text>
+        {locked ? <Text style={styles.hint}>{locked}</Text> : null}
+        {status.programs.length === 0 ? <Text style={styles.hint}>No .exe found in {status.folder}.</Text> : null}
+        {status.programs.map((exe) => (
+          <View key={exe} style={styles.row}>
+            <Button title={exe} onPress={() => start(exe)} disabled={!ready || starting || live || !!locked} />
+          </View>
+        ))}
+        <View style={styles.row}>
+          <Button title="Look again" onPress={() => setStatus(Gow3Core.windowsStatus())} quiet />
+          <Button title="Show log" onPress={() => setLog(Gow3Core.readWindowsLog())} quiet />
+        </View>
+        {message ? <Text style={styles.hint}>{message}</Text> : null}
+      </Panel>
+      {log ? <Mono title="Windows log (madeira-log.txt)" text={log} /> : null}
+    </>
+  );
+}
+
 function TabButton({ label, glyph, active, onPress }: { label: string; glyph: string; active: boolean; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} style={styles.tab}>
@@ -467,6 +536,9 @@ export default function App() {
               </View>
               {status ? <Text style={styles.hint}>{status}</Text> : null}
             </Panel>
+            <WindowsTest
+              locked={files.started || jit ? 'GoW3 used JIT or started in this launch: reopen the app to start a Windows program.' : null}
+            />
             {gameLog ? <Mono title="Game log" text={gameLog} /> : null}
             {gpuReport ? <Mono title="GPU test" text={gpuReport} /> : null}
             {result ? <Mono title="Self-test" text={result} /> : null}

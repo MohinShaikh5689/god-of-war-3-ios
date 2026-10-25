@@ -56,9 +56,12 @@ private final class OneShot {
   }
 }
 
-/// Waits up to `timeout` for a debugger, then has it prepare a `poolMb` MiB JIT pool and detach.
-/// `finish` gets gow3_jit_setup's result, or nil on timeout or when `shot` was claimed elsewhere.
-private func waitForDebuggerThenSetup(poolMb: Int, timeout: TimeInterval, shot: OneShot, finish: @escaping (Int32?) -> Void) {
+/// Waits up to `timeout` for a debugger, then runs `setup` while it is attached: GoW3's
+/// gow3_jit_setup prepares its JIT pool through it and detaches it; a Windows session's
+/// winecore_start does the same with Madeira's pool. `finish` gets setup's result, or nil on
+/// timeout or when `shot` was claimed elsewhere.
+private func waitForDebuggerThenSetup(timeout: TimeInterval, shot: OneShot, setup: @escaping () -> Int32,
+                                      finish: @escaping (Int32?) -> Void) {
   DispatchQueue.global(qos: .userInitiated).async {
     let deadline = Date().addingTimeInterval(timeout)
     while gow3_jit_debugger_attached() == 0 {
@@ -69,7 +72,7 @@ private func waitForDebuggerThenSetup(poolMb: Int, timeout: TimeInterval, shot: 
       }
       Thread.sleep(forTimeInterval: 0.25)
     }
-    finish(gow3_jit_setup(UInt32(poolMb)))
+    finish(setup())
   }
 }
 
@@ -251,6 +254,88 @@ public class Gow3CoreModule: Module {
     gameStarted = true
   }
 
+  /// Opens StikDebug with the universal JIT script for this process, waits for the debugger, then runs
+  /// `setup` while it is attached. Resolves with setup's result.
+  private static func enableJitStikDebug(setup: @escaping () -> Int32, promise: Promise) {
+    let start = {
+      waitForDebuggerThenSetup(timeout: 120, shot: OneShot(), setup: setup) { code in
+        if let code {
+          promise.resolve(Int(code))
+        } else {
+          promise.reject(Gow3Error(description: "StikDebug did not attach within 120 s"))
+        }
+      }
+    }
+    if gow3_jit_debugger_attached() != 0 {
+      start()
+      return
+    }
+    guard let bundleId = Bundle.main.bundleIdentifier, let script = universalScript else {
+      promise.reject(Gow3Error(description: "bundle id or JIT script missing"))
+      return
+    }
+    var components = URLComponents()
+    components.scheme = "stikdebug"
+    components.host = "enable-jit"
+    components.queryItems = [
+      URLQueryItem(name: "bundle-id", value: bundleId),
+      URLQueryItem(name: "pid", value: String(getpid())),
+      URLQueryItem(name: "script-data", value: script.base64EncodedString()),
+    ]
+    guard let url = components.url else {
+      promise.reject(Gow3Error(description: "cannot build the StikDebug URL"))
+      return
+    }
+    UIApplication.shared.open(url, options: [:]) { opened in
+      if opened {
+        start()
+      } else {
+        promise.reject(Gow3Error(description: "StikDebug is not installed"))
+      }
+    }
+  }
+
+  /// Built-in JIT (iOS 26+): the app's own helper extension attaches the debugger with the pairing
+  /// file made in-app, then `setup` runs while it is attached. Resolves with setup's result.
+  private static func enableJitBuiltIn(setup: @escaping () -> Int32, promise: Promise) {
+    let shot = OneShot()
+    let finish: (Int32?) -> Void = { code in
+      guard shot.claim() else { return }
+      if let code {
+        promise.resolve(Int(code))
+      } else {
+        promise.reject(Gow3Error(description: "The debugger did not attach within 90 s. Is LocalDevVPN connected?"))
+      }
+    }
+    if gow3_jit_debugger_attached() != 0 {
+      waitForDebuggerThenSetup(timeout: 1, shot: OneShot(), setup: setup, finish: finish)
+      return
+    }
+    guard let pairing = Gow3BuiltInJIT.loadPairing() else {
+      promise.reject(Gow3Error(description: "Pair this iPhone first."))
+      return
+    }
+    guard let script = universalScript else {
+      promise.reject(Gow3Error(description: "The JIT script is missing from the app."))
+      return
+    }
+    let request = Gow3JITRequest(operation: .enable, targetPID: getpid(), pairingData: pairing,
+                                 scriptBase64: script.base64EncodedString())
+    Gow3BuiltInJIT.send(request, started: {
+      waitForDebuggerThenSetup(timeout: 90, shot: shot, setup: setup, finish: finish)
+    }, completion: { result in
+      // The helper answers when the script detaches; that is after a successful setup, or an error.
+      let message: String
+      switch result {
+      case .success(let response) where response.success: return
+      case .success(let response): message = response.message
+      case .failure(let error): message = error.localizedDescription
+      }
+      guard shot.claim() else { return }
+      promise.reject(Gow3Error(description: message))
+    })
+  }
+
   public func definition() -> ModuleDefinition {
     Name("Gow3Core")
 
@@ -285,42 +370,7 @@ public class Gow3CoreModule: Module {
     // Opens StikDebug with the universal JIT script for this process, waits for the debugger, then
     // has it prepare a `poolMb` MiB JIT pool and detach. Resolves with gow3_jit_setup's result.
     AsyncFunction("enableJit") { (poolMb: Int, promise: Promise) in
-      let start = {
-        waitForDebuggerThenSetup(poolMb: poolMb, timeout: 120, shot: OneShot()) { code in
-          if let code {
-            promise.resolve(Int(code))
-          } else {
-            promise.reject(Gow3Error(description: "StikDebug did not attach within 120 s"))
-          }
-        }
-      }
-      if gow3_jit_debugger_attached() != 0 {
-        start()
-        return
-      }
-      guard let bundleId = Bundle.main.bundleIdentifier, let script = Gow3CoreModule.universalScript else {
-        promise.reject(Gow3Error(description: "bundle id or JIT script missing"))
-        return
-      }
-      var components = URLComponents()
-      components.scheme = "stikdebug"
-      components.host = "enable-jit"
-      components.queryItems = [
-        URLQueryItem(name: "bundle-id", value: bundleId),
-        URLQueryItem(name: "pid", value: String(getpid())),
-        URLQueryItem(name: "script-data", value: script.base64EncodedString()),
-      ]
-      guard let url = components.url else {
-        promise.reject(Gow3Error(description: "cannot build the StikDebug URL"))
-        return
-      }
-      UIApplication.shared.open(url, options: [:]) { opened in
-        if opened {
-          start()
-        } else {
-          promise.reject(Gow3Error(description: "StikDebug is not installed"))
-        }
-      }
+      Gow3CoreModule.enableJitStikDebug(setup: { gow3_jit_setup(UInt32(poolMb)) }, promise: promise)
     }.runOnQueue(.main)
 
     // Built-in JIT (iOS 26+): the app's own helper extension attaches the debugger, using a pairing
@@ -374,43 +424,58 @@ public class Gow3CoreModule: Module {
     /// Starts the helper, which attaches the debugger to this process; then creates a `poolMb` MiB
     /// JIT pool and detaches. Resolves with gow3_jit_setup's result.
     AsyncFunction("enableJitBuiltIn") { (poolMb: Int, promise: Promise) in
-      let shot = OneShot()
-      let finish: (Int32?) -> Void = { code in
-        guard shot.claim() else { return }
-        if let code {
-          promise.resolve(Int(code))
-        } else {
-          promise.reject(Gow3Error(description: "The debugger did not attach within 90 s. Is LocalDevVPN connected?"))
-        }
-      }
-      if gow3_jit_debugger_attached() != 0 {
-        waitForDebuggerThenSetup(poolMb: poolMb, timeout: 1, shot: OneShot(), finish: finish)
-        return
-      }
-      guard let pairing = Gow3BuiltInJIT.loadPairing() else {
-        promise.reject(Gow3Error(description: "Pair this iPhone first."))
-        return
-      }
-      guard let script = Gow3CoreModule.universalScript else {
-        promise.reject(Gow3Error(description: "The JIT script is missing from the app."))
-        return
-      }
-      let request = Gow3JITRequest(operation: .enable, targetPID: getpid(), pairingData: pairing,
-                                   scriptBase64: script.base64EncodedString())
-      Gow3BuiltInJIT.send(request, started: {
-        waitForDebuggerThenSetup(poolMb: poolMb, timeout: 90, shot: shot, finish: finish)
-      }, completion: { result in
-        // The helper answers when the script detaches; that is after a successful setup, or an error.
-        let message: String
-        switch result {
-        case .success(let response) where response.success: return
-        case .success(let response): message = response.message
-        case .failure(let error): message = error.localizedDescription
-        }
-        guard shot.claim() else { return }
-        promise.reject(Gow3Error(description: message))
-      })
+      Gow3CoreModule.enableJitBuiltIn(setup: { gow3_jit_setup(UInt32(poolMb)) }, promise: promise)
     }.runOnQueue(.main)
+
+    /// The Windows engine (Gow3WineEngine.swift): whether this build carries it, the programs under
+    /// Documents/wine/drive_c, and the session's state (winecore_state) and failure, once it was loaded.
+    Function("windowsStatus") { () -> [String: Any] in
+      var status: [String: Any] = [
+        "framework": Gow3WineEngine.frameworkPath.map { FileManager.default.fileExists(atPath: $0) } ?? false,
+        "resources": Gow3WineEngine.resourcesPresent, "folder": "Documents/wine/drive_c",
+        "programs": Gow3WineEngine.programs(), "state": 0, "failure": "",
+      ]
+      // Not loaded here: loading runs its constructors (Madeira's address-space reservation), which only
+      // a Windows session may do.
+      if let engine = Gow3WineEngine.current {
+        status["state"] = Int(engine.state)
+        status["failure"] = engine.failure
+      }
+      return status
+    }
+
+    /// Starts a Windows program: the Windows view is presented and its layer handed to DXMT, then JIT is
+    /// enabled (the built-in helper, or StikDebug) and, while the debugger is attached, winecore_start
+    /// prepares Madeira's JIT pool, detaches it and starts wineserver and the program. `exe` is a C:\ path.
+    AsyncFunction("startWindowsGame") { (exe: String, args: String, builtIn: Bool, promise: Promise) in
+      let engine: Gow3WineEngine
+      do {
+        engine = try Gow3WineEngine.load()
+      } catch {
+        promise.reject(error)
+        return
+      }
+      Gow3WineGameViewController.present { controller in
+        guard let controller else {
+          promise.reject(Gow3Error(description: "No window to present the Windows view in."))
+          return
+        }
+        controller.attach(engine)
+        // The guest's virtual monitor: Madeira's default session size.
+        let setup = { engine.start(exe: exe, args: args, screenWidth: 1280, screenHeight: 720) }
+        if builtIn {
+          Gow3CoreModule.enableJitBuiltIn(setup: setup, promise: promise)
+        } else {
+          Gow3CoreModule.enableJitStikDebug(setup: setup, promise: promise)
+        }
+      }
+    }.runOnQueue(.main)
+
+    /// The last 24 KiB of Documents/madeira-log.txt (Wine, FEX and DXMT write it).
+    Function("readWindowsLog") { () -> String in
+      guard let data = try? Data(contentsOf: Gow3WineEngine.logURL) else { return "" }
+      return String(decoding: data.suffix(24 * 1024), as: UTF8.self)
+    }
 
     /// What the loader needs in Documents/gow3, and which of it is there.
     Function("gameFiles") { () -> [String: Any] in

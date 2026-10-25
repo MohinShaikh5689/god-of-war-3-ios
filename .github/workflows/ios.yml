@@ -77,6 +77,46 @@ jobs:
           brew install glslang boost
           native/scripts/build-ios.sh build/native-ios
 
+      # The Windows engine (docs/WINE_ENGINE.md): Madeira's libraries and WineCore.framework, as the
+      # Wine engine workflow builds them. LLVM 15 for iOS and the tarball dependencies come from the caches
+      # that workflow saves (same keys); a branch that has none builds them (about an hour, once).
+      - name: Wine engine submodules
+        run: |
+          native/wine/scripts/fetch-submodules.sh
+          sums=$(cat native/third_party/Madeira/build/gnutls-ios/src/SHA256SUMS native/third_party/Madeira/build/ffmpeg/src/SHA256SUMS | shasum | cut -c1-16)
+          echo "WINE_DEPS_KEY=wine-deps-v1-$sums" >> "$GITHUB_ENV"
+
+      - name: Restore the Wine engine's LLVM
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            native/third_party/Madeira/toolchains/llvm-project
+            native/third_party/Madeira/toolchains/llvm-host-build/bin
+            native/third_party/Madeira/toolchains/llvm-ios-build/include
+            native/third_party/Madeira/toolchains/llvm-ios-build/lib/*.a
+            native/third_party/Madeira/toolchains/llvm-ios-build/.done
+          key: llvm-15.0.7-ios17-v1
+
+      - name: Restore the Wine engine's dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            native/third_party/Madeira/toolchains/llvm-mingw-20260421-ucrt-macos-universal
+            native/third_party/Madeira/toolchains/gnutls-ios
+            native/third_party/Madeira/toolchains/ffmpeg-ios
+            native/third_party/Madeira/app/Madeira/libavformat.a
+            native/third_party/Madeira/app/Madeira/libavcodec.a
+            native/third_party/Madeira/app/Madeira/libswresample.a
+            native/third_party/Madeira/app/Madeira/libavutil.a
+            native/third_party/Madeira/research/freetype
+            native/third_party/Madeira/build/freetype-ios/build
+          key: ${{ env.WINE_DEPS_KEY }}
+
+      - name: Wine engine (WineCore.framework)
+        run: |
+          brew install bison flex meson
+          native/wine/scripts/build-wine-ios.sh
+
       - name: Cargo cache
         uses: actions/cache@v4
         with:
@@ -127,6 +167,9 @@ jobs:
         run: |
           native/scripts/fetch-stikjit.sh build/stikjit
           native/scripts/build-jit-helper.sh build/stikjit "build/xcode/Build/Products/$CONFIGURATION-iphoneos/gow3ios.app"
+
+      - name: Windows engine (WineCore.framework and Madeira's resources)
+        run: native/wine/scripts/embed-wine.sh "build/xcode/Build/Products/$CONFIGURATION-iphoneos/gow3ios.app"
 
       - name: Package the IPA (ad-hoc signed with the app's entitlements; the sideloader re-signs it)
         run: |

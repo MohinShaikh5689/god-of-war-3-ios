@@ -46,6 +46,13 @@ declare class Gow3CoreModule extends NativeModule<{}> {
   runSelfTest(): Promise<string>;
   /** Connected game controllers (GameController framework). */
   controllers(): Array<{ name: string; category: string; kind: string; haptics: boolean; light: boolean; battery: number }>;
+  /** The Windows engine (WineCore.framework): whether this build has it, the .exe files under
+   *  Documents/wine/drive_c (C:\ paths), and the session: 0 idle, 1 starting, 2 running, 3 exited, -1 failed. */
+  windowsStatus(): { framework: boolean; resources: boolean; folder: string; programs: string[]; state: number; failure: string };
+  /** Presents the Windows view, enables JIT (built-in helper or StikDebug) and starts `exe` (a C:\ path). Resolves 0 on success. */
+  startWindowsGame(exe: string, args: string, builtIn: boolean): Promise<number>;
+  /** The last 24 KiB of Documents/madeira-log.txt (Wine, FEX and DXMT). */
+  readWindowsLog(): string;
   /** Progress lines of every self-test run so far (survives a crash). */
   readLog(): string;
   clearLog(): void;

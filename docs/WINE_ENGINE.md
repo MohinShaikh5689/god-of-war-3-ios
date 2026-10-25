@@ -74,6 +74,14 @@ Its `docs/BUILDING.md` marks most steps unverified from a clean checkout. Found 
      games in `drive_c`), `Documents/madeira.cfg`, `Documents/madeira-log.txt`.
    - c. **Game view**: a view controller like GoW3's with a `CAMetalLayer` (`winecore_set_layer`), touch
      mapped to the guest monitor (`winios_post_touch_*`), controllers to `winios_gamepad_set_state`.
+     Written for 0.2.0 (`app/modules/gow3-core/ios/Gow3WineEngine.swift`, the System tab's "Windows engine
+     (test)" panel). The JIT flow is GoW3's (built-in helper or StikDebug, same `universal.js`: Madeira's
+     pool uses the same `brk #0xf00d` requests); only the step run while the debugger is attached differs
+     (`winecore_start` instead of `gow3_jit_setup`). First version without the relaunch: the framework is
+     loaded at session start and its own constructor makes Madeira's early reservation then; the relaunch
+     comes if the logs show the pool squeezed. GoW3's FEX (in the app) and WineCore's share a commit; the
+     one header our patches change (`OpcodeDispatcher.h`) changes signatures, so dyld's weak-symbol
+     coalescing cannot mix the two copies' inline code.
    - d. **Exit**: a D3D11 test program from `Madeira/tests/dxmt` draws on the iPhone.
 3. **Gow3Core.framework**: the GoW3 engine moves from the static `libgow3core_all.a` into its own
    framework, so both engines and their FEX copies sit side by side; the Expo module loads the chosen one.
