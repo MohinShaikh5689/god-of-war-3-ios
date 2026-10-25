@@ -28,6 +28,9 @@ const HELPER_EXE = /crash|unins|setup|install|redist|dxweb|quicksfv|report/i;
  *  folder, started by its first program that is not a helper. */
 function legacyWindowsGames(): WindowsGame[] {
   if (!hasWindowsEngine) return [];
+  // Documents, from GoW3's cover (…/Documents/gow3/game/sce_sys/icon0.png): a game's cover.png is looked
+  // for in its own folder; the Cover view shows the initials when it is not there.
+  const docs = Gow3Core.gameFiles().cover?.replace(/gow3\/game\/sce_sys\/icon0\.png$/, '') ?? '';
   const groups = new Map<string, string[]>();
   for (const exe of Gow3Core.windowsStatus().programs) {
     const parts = exe.replace(/^C:\\/, '').replace(/^drive_c\\/, '').split('\\');
@@ -37,7 +40,8 @@ function legacyWindowsGames(): WindowsGame[] {
   return [...groups].map(([name, exes]) => {
     const exe = exes.find((e) => !HELPER_EXE.test(e.split('\\').pop() ?? '')) ?? exes[0];
     const program = exe.split('\\').slice(3).join('/');
-    return { name, programs: [program], program, exe, cover: '' };
+    const cover = docs.endsWith('/Documents/') ? `${docs}wine/drive_c/${encodeURIComponent(name)}/cover.png` : '';
+    return { name, programs: [program], program, exe, cover };
   });
 }
 const listWindowsGames = (): WindowsGame[] => (hasWindows ? Gow3Core.windowsGames() : legacyWindowsGames());
@@ -154,7 +158,22 @@ function Mono({ title, text }: { title: string; text: string }) {
 
 /** A game's cover, or its initials on a dark tile when it has none. */
 function Cover({ source, title, size, onError }: { source: ImageSourcePropType | null; title: string; size: number; onError?: () => void }) {
-  if (source) return <Image source={source} style={[styles.cover, { width: size, height: size, borderRadius: size / 7 }]} onError={onError} />;
+  // An image that does not load (no cover file there) falls back to the initials.
+  const [failed, setFailed] = useState(false);
+  const uri = source && typeof source === 'object' && 'uri' in source ? source.uri : '';
+  useEffect(() => setFailed(false), [uri]);
+  if (source && !failed) {
+    return (
+      <Image
+        source={source}
+        style={[styles.cover, { width: size, height: size, borderRadius: size / 7 }]}
+        onError={() => {
+          setFailed(true);
+          onError?.();
+        }}
+      />
+    );
+  }
   const initials = title
     .split(/[\s:_-]+/)
     .filter((w) => /^[A-Za-z0-9]/.test(w))
