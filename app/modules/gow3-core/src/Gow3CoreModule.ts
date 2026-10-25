@@ -56,6 +56,9 @@ declare class Gow3CoreModule extends NativeModule<{}> {
   windowsGames(): Array<{ name: string; programs: string[]; program: string; exe: string; cover: string }>;
   /** Picks the program Play starts for a game folder. */
   setWindowsGameProgram(folder: string, program: string): void;
+  /** The FPS meter over Windows games (frames per second, frame time, GPU busy share, app memory). */
+  windowsFpsMeter(): boolean;
+  setWindowsFpsMeter(on: boolean): void;
   /** Shows the running Windows game again. False when none is running. */
   resumeWindowsGame(): Promise<boolean>;
   /** Presents the Windows view, enables JIT (built-in helper or StikDebug) and starts `exe` (a C:\ path). Resolves 0 on success. */

@@ -19,6 +19,9 @@ final class Gow3WineEngine {
   private typealias ScreenSize = @convention(c) (UnsafeMutablePointer<Int32>, UnsafeMutablePointer<Int32>) -> Void
   private typealias Touch = @convention(c) (Int32, Int32) -> Void
   private typealias Gamepad = @convention(c) (Int32, UnsafeRawPointer?) -> Void
+  private typealias Counter = @convention(c) () -> UInt64
+  private typealias MeterEnable = @convention(c) (Int32) -> Void
+  private typealias Seconds = @convention(c) () -> Double
 
   private let startFn: Start
   private let stateFn: State
@@ -29,6 +32,10 @@ final class Gow3WineEngine {
   let touchMove: (Int32, Int32) -> Void
   let touchUp: (Int32, Int32) -> Void
   private let gamepadFn: Gamepad
+  /// DXMT's present counter and GPU busy time (winemetal_unix.c), for the FPS meter; nil if missing.
+  private var presentsFn: Counter?
+  private var gpuMeterEnableFn: MeterEnable?
+  private var gpuBusyFn: Seconds?
 
   /// Documents/wine, Madeira's prefix: games are copied into its drive_c.
   static var prefix: URL {
@@ -104,6 +111,9 @@ final class Gow3WineEngine {
       screenSizeFn: try symbol("winecore_screen_size", type: ScreenSize.self),
       touchDown: try touch("winios_post_touch_down"), touchMove: try touch("winios_post_touch_move"),
       touchUp: try touch("winios_post_touch_up"), gamepadFn: try symbol("winios_gamepad_set_state", type: Gamepad.self))
+    engine.presentsFn = try? symbol("madeira_get_present_count", type: Counter.self)
+    engine.gpuMeterEnableFn = try? symbol("madeira_gpu_meter_enable", type: MeterEnable.self)
+    engine.gpuBusyFn = try? symbol("madeira_gpu_meter_busy_seconds", type: Seconds.self)
     loaded = engine
     return engine
   }
@@ -153,6 +163,27 @@ final class Gow3WineEngine {
   }
 
   func disconnectGamepad(_ index: Int32) { gamepadFn(index, nil) }
+
+  /// Frames the game presented so far, and the GPU's busy seconds while the meter is on (0 without them).
+  var presents: UInt64 { presentsFn?() ?? 0 }
+  var gpuBusySeconds: Double { gpuBusyFn?() ?? 0 }
+  func enableGpuMeter(_ on: Bool) { gpuMeterEnableFn?(on ? 1 : 0) }
+
+  /// The FPS meter over Windows games (the launcher's quick setting); on unless switched off.
+  static var meterEnabled: Bool {
+    get { UserDefaults.standard.object(forKey: "windowsFpsMeter") as? Bool ?? true }
+    set { UserDefaults.standard.set(newValue, forKey: "windowsFpsMeter") }
+  }
+
+  /// The app's memory as jetsam counts it (phys_footprint), in bytes.
+  static var footprint: UInt64 {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+    let kr = withUnsafeMutablePointer(to: &info) {
+      $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+    }
+    return kr == KERN_SUCCESS ? info.phys_footprint : 0
+  }
 
   /// Programs under drive_c (up to four folders deep), as C:\ paths, for the test screen. The enumerator
   /// gives paths relative to drive_c: the URLs it hands out can start with /private/var where drive_c's own
@@ -257,6 +288,9 @@ final class Gow3WineGameViewController: UIViewController {
   let metalView = Gow3MetalView()
   private var engine: Gow3WineEngine?
   private var link: CADisplayLink?
+  /// The FPS meter, top right like GoW3's: frames per second, frame time, GPU busy share, app memory.
+  private let meter = UILabel()
+  private var meterSample: (time: CFTimeInterval, presents: UInt64, gpu: Double)?
 
   override func loadView() {
     metalView.backgroundColor = .black
@@ -282,6 +316,20 @@ final class Gow3WineGameViewController: UIViewController {
 
   override func viewDidLoad() {
     super.viewDidLoad()
+    meter.font = .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+    meter.textColor = .white
+    meter.backgroundColor = UIColor.black.withAlphaComponent(0.45)
+    meter.layer.cornerRadius = 6
+    meter.layer.masksToBounds = true
+    meter.textAlignment = .center
+    meter.isUserInteractionEnabled = false
+    meter.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(meter)
+    NSLayoutConstraint.activate([
+      meter.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
+      meter.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -8),
+      meter.heightAnchor.constraint(equalToConstant: 20),
+    ])
     // Back to the launcher, as in GoW3: a two-finger double tap. The game keeps running.
     let leave = UITapGestureRecognizer(target: self, action: #selector(leaveGame))
     leave.numberOfTouchesRequired = 2
@@ -300,6 +348,31 @@ final class Gow3WineGameViewController: UIViewController {
     while let presented = top.presentedViewController { top = presented }
     top.present(controller, animated: false)
     return true
+  }
+
+  override func viewWillAppear(_ animated: Bool) {
+    super.viewWillAppear(animated)
+    meter.isHidden = !Gow3WineEngine.meterEnabled
+    engine?.enableGpuMeter(Gow3WineEngine.meterEnabled)
+    meterSample = nil
+  }
+
+  /// Twice a second, from the frame link: the rates over the last interval.
+  private func updateMeter(_ now: CFTimeInterval) {
+    guard let engine, !meter.isHidden else { return }
+    let presents = engine.presents, gpu = engine.gpuBusySeconds
+    guard let last = meterSample else {
+      meterSample = (now, presents, gpu)
+      return
+    }
+    let dt = now - last.time
+    guard dt >= 0.5 else { return }
+    let fps = Double(presents &- last.presents) / dt
+    let busy = min(max((gpu - last.gpu) / dt, 0), 1)
+    let gb = Double(Gow3WineEngine.footprint) / 1_073_741_824
+    let frame = fps > 0 ? String(format: " %.1f ms", 1000 / fps) : ""
+    meter.text = "  " + String(format: "%.0f FPS", fps) + frame + String(format: " · GPU %.0f%% · %.1f GB", busy * 100, gb) + "  "
+    meterSample = (now, presents, gpu)
   }
 
   override func viewDidLayoutSubviews() {
@@ -341,6 +414,7 @@ final class Gow3WineGameViewController: UIViewController {
 
   @objc private func pollControllers() {
     guard let engine else { return }
+    if let link { updateMeter(link.timestamp) }
     let pads = GCController.controllers().compactMap(\.extendedGamepad).prefix(4)
     var seen = Set<Int32>()
     for (i, pad) in pads.enumerated() {

@@ -457,6 +457,15 @@ public class Gow3CoreModule: Module {
       try Gow3WineEngine.setProgram(program, forGame: folder)
     }
 
+    /// The FPS meter over Windows games (frames per second, frame time, GPU busy share, app memory).
+    Function("windowsFpsMeter") { () -> Bool in
+      Gow3WineEngine.meterEnabled
+    }
+
+    Function("setWindowsFpsMeter") { (on: Bool) in
+      Gow3WineEngine.meterEnabled = on
+    }
+
     /// Shows the running Windows game again (after a two-finger double tap left it). False without one.
     AsyncFunction("resumeWindowsGame") { () -> Bool in
       Gow3WineGameViewController.resume()

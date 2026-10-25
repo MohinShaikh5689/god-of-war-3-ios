@@ -22,6 +22,7 @@ const FPS_LIMITS = [30, 60, 0];
 // The Windows engine is new in 0.2.0, its game list in 0.2.1; older installed IPAs lack them.
 const hasWindows = typeof Gow3Core.windowsGames === 'function';
 const listWindowsGames = () => (hasWindows ? Gow3Core.windowsGames() : []);
+const hasFpsMeter = typeof Gow3Core.windowsFpsMeter === 'function';
 const readWindowsStatus = () => (typeof Gow3Core.windowsStatus === 'function' ? Gow3Core.windowsStatus() : null);
 type WindowsGame = ReturnType<typeof Gow3Core.windowsGames>[number];
 type Game = { key: string; kind: 'gow3' | 'windows'; title: string; platform: string; cover: ImageSourcePropType | null; win?: WindowsGame };
@@ -267,6 +268,7 @@ export default function App() {
   const [selected, setSelected] = useState('gow3');
   // The Windows game started in this launch (its tile shows Resume while it runs).
   const [runningKey, setRunningKey] = useState('');
+  const [fpsMeter, setFpsMeter] = useState(() => (hasFpsMeter ? Gow3Core.windowsFpsMeter() : false));
 
   const refresh = useCallback(() => {
     setReport(Gow3Core.deviceReport());
@@ -575,6 +577,18 @@ export default function App() {
                     setTouchControls(!touchControls);
                   }}
                   active={touchControls}
+                />
+              ) : null}
+              {hasFpsMeter && current.kind === 'windows' ? (
+                <QuickTile
+                  title="FPS METER"
+                  value={fpsMeter ? 'On' : 'Off'}
+                  detail="FPS, GPU, memory in game"
+                  onPress={() => {
+                    Gow3Core.setWindowsFpsMeter(!fpsMeter);
+                    setFpsMeter(!fpsMeter);
+                  }}
+                  active={fpsMeter}
                 />
               ) : null}
               <QuickTile
