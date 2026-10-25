@@ -85,4 +85,5 @@ Expo (React Native) app shell: launcher, dump import via Files app, settings, JI
    Madeira inputs its docs don't record: docs/WINE_ENGINE.md. Madeira is `native/third_party/Madeira`;
    its iOS libraries build with `native/wine/scripts/build-wine-ios.sh` (CI `.github/workflows/wine.yml`).
    Phase 1 (the iOS libraries from a clean checkout) DONE 2026-10-25. Phase 2: WineCore.framework is in the app
-   (0.2.0, System tab test panel); Hollow Knight: Silksong plays on the iPhone 17 at 60 FPS (2026-10-25).
+   (0.2.0, System tab test panel); Hollow Knight: Silksong plays on the iPhone 17 at 60 FPS (2026-10-25);
+   Sekiro boots at a 30 FPS cap (2026-10-26; needs code page 932 and the early address-space claim).

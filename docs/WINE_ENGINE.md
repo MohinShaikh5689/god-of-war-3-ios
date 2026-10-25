@@ -103,7 +103,13 @@ Its `docs/BUILDING.md` marks most steps unverified from a clean checkout. Found 
    or by tapping STARTS (kept in `Documents/wine/olympus-games.json`). Covers: `cover.jpg`/`cover.png` in the game's
    folder, a Unity game's `UnityPlayer.png`, else its initials.
 5. **Sekiro**: boot from the user's game folder, then memory (8 GB iPhone, with the GoW3 file-backed
-   memory lessons) and performance.
+   memory lessons) and performance. BOOTS (2026-10-26, 0.2.0) at the 30 FPS cap (`env.MADEIRA_FPS_CAP = 30` in
+   `madeira.cfg`). What it took: Wine's code page 932 (Madeira bundles four code pages; without `c_932.nls`
+   Sekiro's unhandled C++ exception ends in `__fastfail`; prefix `system32` on the phone, bundled from 963ffa2),
+   Sekiro's own Steam identity in `madeira.cfg` (Madeira's bridge otherwise publishes Thumper's, 356400), and
+   the early claim ("Prepare launch"): a plain start found app memory already at 0x140000000 and Madeira refused
+   to place the pool ("BAD POOL"). The pool came out at 544 MB (largest gap). Next: Play should make the early
+   claim itself (arm, ask for one reopen), and per-game Steam identity instead of a global one.
 6. **Steam client (optional)**: Valve's Windows Steam client in the prefix, from `madeira-dock`.
 
 ## Per-game notes (from Madeira's sources, 2026-10-25)
