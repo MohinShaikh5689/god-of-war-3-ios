@@ -4,3 +4,4 @@ build/
 *.ipa
 .DS_Store
 native/rppairing/target/
+native/wine/out/

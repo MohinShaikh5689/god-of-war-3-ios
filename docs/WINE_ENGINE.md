@@ -1,0 +1,67 @@
+# Wine engine: Windows games (Sekiro) next to GoW3
+
+Goal: Olympus runs two engines, one per launch, under one console-style launcher:
+- **GoW3 engine**: this repo's port (gow3 runtime, standalone FEXCore, shadPS4 video core, MoltenVK).
+- **Wine engine**: [Madeira](https://github.com/willfaust/Madeira)'s stack (FEX as Wine's ARM64EC
+  module, Wine 11.4, DXMT for D3D9/10/11 on Metal, madeira-d3d12). First target: **Sekiro: Shadows
+  Die Twice** (64-bit, D3D11, so DXMT).
+
+Branch: `wine-engine`. Madeira is the submodule `native/third_party/Madeira`, pinned to e3a88fd
+(2026-10-23); its forks pin FEX f59cab9 (the same commit as our own FEX), Wine 9129e96
+(`madeira-lgpl`) and DXMT 128b297 (`ios-port`).
+
+## Decisions
+- **Two frameworks, one shell**: `Gow3Core.framework` and `WineCore.framework`, each with its own FEX
+  build (standalone vs ARM64EC), kept apart by the two-level namespace. Only one engine is started per
+  launch: both install signal handlers, own a JIT pool and reserve address space. Switching engines
+  means reopening the app.
+- **No Steam**: no sign-in, Madeira Dock or Cloud saves. A Windows game is a folder the user copies
+  in through the Files app, like the GoW3 dump.
+- **No Madeira UI**: only its engine core is taken (below). The launcher is ours, in React Native: a
+  console-style home with one tile per game (GoW3, then each Windows game), shared JIT setup and
+  settings, and per-engine settings behind each tile.
+- **Documents layout**: `Documents/gow3/` (unchanged) and `Documents/windows/` (`prefix/` for the
+  Wine prefix, `games/<name>/` for the copied games).
+
+## What is taken from Madeira
+| Part | Where in Madeira | Becomes |
+|---|---|---|
+| iOS-side libraries (FEXCore, ntdll/win32u unix, wineserver, DXMT + LLVM 15, FFmpeg, GnuTLS) | `build/*`, built by `native/wine/scripts/build-wine-ios.sh` | linked into `WineCore.framework` |
+| Engine bridge: FEX init, wineserver/process start, display shim, JIT allocator, Winios (window/input), pad output | `app/Madeira/{FEXBridge,JITAllocator,IOSDisplayShim,WineServerBridge,WineProcessBridge,PadOutput}*`, `Winios/` | `WineCore.framework` with a small C API (`native/wine/include/winecore.h`) |
+| Windows side: the arm64ec DLL farm (261 DLLs incl. `ntdll`, `xtajit64`, `winemetal`, `d3d11`, `dxgi`, `d3d12`), NLS files, prefix template, converter dylib | `app/Madeira/{arm64ec-windows,nls,prefix-template.tar.gz,d3d12}` (tracked prebuilt) | app bundle resources under `Wine/` |
+| Not taken | SwiftUI app, Steam (`SwiftSteam`, Dock, Cloud), Wine Mono, WoW64 (32-bit) | |
+
+## Inputs Madeira does not record
+Its `docs/BUILDING.md` marks most steps unverified from a clean checkout. Found while porting:
+1. `wine/build-macos`, a configured Wine tree, is read by the ntdll, win32u and wineserver scripts;
+   its configure line is not recorded. Ours: macOS host, `--enable-archs=aarch64 --without-x`, then
+   `make include/all` for the widl headers. `build-arm64ec/include` (dwrite) points at it.
+2. `wineserver/build.sh` swaps patched objects into an existing `libwineserver.a`; the base is the rest
+   of `wine/server/*.c`, which we compile with the same flags.
+3. `dxmt-ios/build.sh` only refreshes `libdxmt_combined.a` (DXMT + LLVM). We build LLVM 15.0.7 for iOS
+   (its README's recipe; `BUILDING.md` names a different LLVM commit) and merge the archive ourselves.
+4. `research/freetype` (FreeType 2.13.3) is cloned by hand before `freetype-ios/build.sh`.
+
+## Phases
+1. **iOS libraries on CI**: `.github/workflows/wine.yml` builds every library from a clean checkout
+   (artifact `wine-ios-libs`, logs in `wine-ios-logs`). Expect several fix-up rounds. IN PROGRESS.
+2. **WineCore.framework**: the bridge sources plus the libraries as one dynamic framework with a C API
+   (start wineserver, init the prefix, run an `.exe` with arguments, attach a `CAMetalLayer` view,
+   input, stop). Exit: a D3D11 test program from `Madeira/tests/dxmt` draws on the iPhone.
+3. **Gow3Core.framework**: the GoW3 engine moves from the static `libgow3core_all.a` into its own
+   framework, so both engines and their FEX copies sit side by side; the Expo module loads the chosen one.
+4. **Console launcher**: the RN home becomes multi-game (tiles, a Windows game import from Files, per-game
+   settings: executable, arguments, frame cap, touch layout). GoW3 keeps everything it has now.
+5. **Sekiro**: boot, then memory (8 GB iPhone, with the GoW3 file-backed memory lessons) and performance.
+
+## Risks
+- **Sekiro and Steam**: Sekiro's executable expects the Steam client and normally exits without it.
+  With Steam out of scope it may not start; this project does not use Steam emulators or cracks.
+  Phase 2 tests the engine with programs that need no Steam.
+- **Memory**: a 64-bit D3D11 game through Wine and FEX on 8 GB; Madeira's "Memory+" entitlement
+  (increased memory limit) is needed, which AltStore keeps.
+- **Debug only**: Madeira notes that Release builds have crashed the guest; the engine framework may
+  need `-O` settings from its Debug configuration.
+- **Licensing**: Madeira is GPL-3.0-or-later with the Madeira Converter Exception (Metal Shader
+  Converter); Wine and FFmpeg are LGPL; the combined app stays GPL-3.0 and must keep Madeira's notices
+  (`LICENSES/`, `THIRD-PARTY-NOTICES.md`). The VC++ runtime DLLs are not shipped.

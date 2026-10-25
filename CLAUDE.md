@@ -80,3 +80,7 @@ Expo (React Native) app shell: launcher, dump import via Files app, settings, JI
    menus and intro video with DualSense input; it crashes on New Game. See docs/NEXT.md.
    Darwin reports writes to protected pages as SIGBUS/BUS_ADRALN: only ESR alignment faults may go to FEXCore.
 6. Tune memory to fit 8 GB, and tune performance and thermals.
+7. Second engine: Madeira (FEX + Wine + DXMT) for Windows games, first Sekiro. Branch `wine-engine`, IN PROGRESS.
+   Plan, decisions (two frameworks, one engine per launch, no Steam, RN console launcher) and the
+   Madeira inputs its docs don't record: docs/WINE_ENGINE.md. Madeira is `native/third_party/Madeira`;
+   its iOS libraries build with `native/wine/scripts/build-wine-ios.sh` (CI `.github/workflows/wine.yml`).

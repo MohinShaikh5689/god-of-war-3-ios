@@ -1,0 +1,73 @@
+name: Wine engine (iOS libraries)
+
+# Phase 1 of docs/WINE_ENGINE.md: build Madeira's iOS-side static libraries (FEXCore, the Wine unix
+# side and wineserver, DXMT with LLVM 15, FFmpeg, GnuTLS) from a clean checkout. Every stage runs and
+# logs even when an earlier one failed, so one run shows every error.
+
+on:
+  push:
+    branches: [wine-engine]
+    paths:
+      - native/wine/**
+      - native/third_party/Madeira
+      - .github/workflows/wine.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_MAXSIZE: 2G
+
+jobs:
+  libs:
+    runs-on: macos-26
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select the latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Submodules
+        run: bash native/wine/scripts/fetch-submodules.sh
+
+      - name: Tools
+        run: brew install bison flex ninja ccache meson
+
+      # LLVM 15 for iOS takes the longest and only changes with the script (its flags and tag).
+      - name: LLVM cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            native/third_party/Madeira/toolchains/llvm-project
+            native/third_party/Madeira/toolchains/llvm-host-build/bin
+            native/third_party/Madeira/toolchains/llvm-ios-build/include
+            native/third_party/Madeira/toolchains/llvm-ios-build/lib/*.a
+          key: llvm15-ios-${{ hashFiles('native/wine/scripts/build-wine-ios.sh') }}
+
+      - name: ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-wine-${{ github.sha }}
+          restore-keys: ccache-wine-
+
+      - name: Build
+        run: bash native/wine/scripts/build-wine-ios.sh
+
+      - name: Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wine-ios-logs
+          path: native/wine/out/logs
+
+      - name: Libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: wine-ios-libs
+          path: native/wine/out/lib

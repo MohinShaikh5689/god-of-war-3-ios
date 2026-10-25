@@ -23,3 +23,6 @@
 [submodule "native/third_party/Vulkan-Headers"]
 	path = native/third_party/Vulkan-Headers
 	url = https://github.com/KhronosGroup/Vulkan-Headers.git
+[submodule "native/third_party/Madeira"]
+	path = native/third_party/Madeira
+	url = https://github.com/willfaust/Madeira.git
