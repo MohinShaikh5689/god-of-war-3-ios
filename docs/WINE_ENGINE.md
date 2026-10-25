@@ -95,7 +95,13 @@ Its `docs/BUILDING.md` marks most steps unverified from a clean checkout. Found 
 3. **Gow3Core.framework**: the GoW3 engine moves from the static `libgow3core_all.a` into its own
    framework, so both engines and their FEX copies sit side by side; the Expo module loads the chosen one.
 4. **Console launcher**: the RN home becomes multi-game (tiles, a Windows game import from Files, per-game
-   settings: executable, arguments, frame cap, touch layout). GoW3 keeps everything it has now.
+   settings: executable, arguments, frame cap, touch layout). GoW3 keeps everything it has now. First version in
+   0.2.1: a shelf of game tiles (GoW3, then every top-level folder of `drive_c` with a program;
+   `Gow3WineEngine.games()`), the hero and Play for the selected game, Resume after a two-finger double tap left a
+   Windows game, "Reopen to play" when the other engine ran in this launch, and the program Play starts picked
+   automatically (a Unity game's `<Name>.exe` beside `<Name>_Data`, else the shallowest, largest non-helper `.exe`)
+   or by tapping STARTS (kept in `Documents/wine/olympus-games.json`). Covers: `cover.jpg`/`cover.png` in the game's
+   folder, a Unity game's `UnityPlayer.png`, else its initials.
 5. **Sekiro**: boot from the user's game folder, then memory (8 GB iPhone, with the GoW3 file-backed
    memory lessons) and performance.
 6. **Steam client (optional)**: Valve's Windows Steam client in the prefix, from `madeira-dock`.

@@ -19,6 +19,12 @@ const listControllers = () => (typeof Gow3Core.controllers === 'function' ? Gow3
 const hasTouchControls = typeof Gow3Core.touchControlsEnabled === 'function';
 const hasFpsLimit = typeof Gow3Core.fpsLimit === 'function';
 const FPS_LIMITS = [30, 60, 0];
+// The Windows engine is new in 0.2.0, its game list in 0.2.1; older installed IPAs lack them.
+const hasWindows = typeof Gow3Core.windowsGames === 'function';
+const listWindowsGames = () => (hasWindows ? Gow3Core.windowsGames() : []);
+const readWindowsStatus = () => (typeof Gow3Core.windowsStatus === 'function' ? Gow3Core.windowsStatus() : null);
+type WindowsGame = ReturnType<typeof Gow3Core.windowsGames>[number];
+type Game = { key: string; kind: 'gow3' | 'windows'; title: string; platform: string; cover: ImageSourcePropType | null; win?: WindowsGame };
 
 const color = {
   bg: '#07070a',
@@ -122,6 +128,22 @@ function Mono({ title, text }: { title: string; text: string }) {
       <Text style={styles.monoText} selectable>
         {text}
       </Text>
+    </View>
+  );
+}
+
+/** A game's cover, or its initials on a dark tile when it has none. */
+function Cover({ source, title, size, onError }: { source: ImageSourcePropType | null; title: string; size: number; onError?: () => void }) {
+  if (source) return <Image source={source} style={[styles.cover, { width: size, height: size, borderRadius: size / 7 }]} onError={onError} />;
+  const initials = title
+    .split(/[\s:_-]+/)
+    .filter((w) => /^[A-Za-z0-9]/.test(w))
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join('');
+  return (
+    <View style={[styles.cover, styles.monogram, { width: size, height: size, borderRadius: size / 7 }]}>
+      <Text style={[styles.monogramText, { fontSize: size / 2.8 }]}>{initials || '?'}</Text>
     </View>
   );
 }
@@ -240,6 +262,11 @@ export default function App() {
   const [fpsLimit, setFpsLimit] = useState(() => (hasFpsLimit ? Gow3Core.fpsLimit() : 30));
   const [touchControls, setTouchControls] = useState(() => (hasTouchControls ? Gow3Core.touchControlsEnabled() : false));
   const [coverFailed, setCoverFailed] = useState(false);
+  const [winGames, setWinGames] = useState(listWindowsGames);
+  const [winStatus, setWinStatus] = useState(readWindowsStatus);
+  const [selected, setSelected] = useState('gow3');
+  // The Windows game started in this launch (its tile shows Resume while it runs).
+  const [runningKey, setRunningKey] = useState('');
 
   const refresh = useCallback(() => {
     setReport(Gow3Core.deviceReport());
@@ -249,6 +276,8 @@ export default function App() {
     Gow3Core.pairingState().then(setPairing, () => setPairing(null));
     setFiles(Gow3Core.gameFiles());
     setGameLog(Gow3Core.readGameLog());
+    setWinGames(listWindowsGames());
+    setWinStatus(readWindowsStatus());
   }, []);
 
   useEffect(() => {
@@ -264,6 +293,14 @@ export default function App() {
     const timer = setInterval(() => setGameLog(Gow3Core.readGameLog()), 1000);
     return () => clearInterval(timer);
   }, [files.started]);
+
+  // While a Windows game starts or runs, follow its state (Starting, Resume, exited).
+  const winLive = winStatus?.state === 1 || winStatus?.state === 2;
+  useEffect(() => {
+    if (!winLive) return;
+    const timer = setInterval(() => setWinStatus(readWindowsStatus()), 2000);
+    return () => clearInterval(timer);
+  }, [winLive]);
 
   const pairingActive = pairing?.phase === 'waiting' || pairing?.phase === 'pin';
   useEffect(() => {
@@ -332,9 +369,62 @@ export default function App() {
   // The dump's own cover (0.1.46+ reports its path); the helmet before that or without one.
   const cover: ImageSourcePropType = files.cover && !coverFailed ? { uri: files.cover } : HELMET;
 
+  const games: Game[] = [
+    { key: 'gow3', kind: 'gow3', title: GAME_TITLE, platform: 'PS4 · REMASTERED', cover },
+    ...winGames.map((g): Game => ({
+      key: `win:${g.name}`,
+      kind: 'windows',
+      title: g.name,
+      platform: 'WINDOWS',
+      cover: g.cover ? { uri: g.cover } : null,
+      win: g,
+    })),
+  ];
+  const current = games.find((g) => g.key === selected) ?? games[0];
+  // One game engine per launch (docs/WINE_ENGINE.md): GoW3's and the Windows engine's JIT pools,
+  // signal handlers and address-space reservations cannot share a process.
+  const winState = winStatus?.state ?? 0;
+  const windowsUsed = winState !== 0;
+  const gow3Used = files.started || jit;
+  const reopen = (why: string) => ({
+    title: 'Reopen to play',
+    onPress: () => {},
+    disabled: true,
+    hint: `${why} One game engine per launch: close ${APP_NAME} from the app switcher and open it again.`,
+  });
+
+  const startWindows = (g: WindowsGame) =>
+    run(async () => {
+      const s = await Gow3Core.builtInJitStatus();
+      const builtInJit = Gow3Core.isDebuggerAttached() || (s.available && s.paired);
+      if (!builtInJit && !(await Gow3Core.isStikDebugInstalled())) {
+        setTab('setup');
+        return 'JIT: pair this iPhone (Setup) and connect LocalDevVPN, or install StikDebug.';
+      }
+      setStatus(`Starting ${g.name}…`);
+      setRunningKey(`win:${g.name}`);
+      const code = await Gow3Core.startWindowsGame(g.exe, '', builtInJit);
+      return code === 0 ? `${g.name} is starting. A two-finger double tap in game returns here.` : `${g.name} did not start (${code}).`;
+    });
+
   let play: { title: string; onPress: () => void; disabled: boolean; hint: string };
-  if (files.started) {
+  if (current.kind === 'windows' && current.win) {
+    const g = current.win;
+    if (runningKey === current.key && winState === 2) {
+      play = { title: 'Resume', onPress: () => Gow3Core.resumeWindowsGame(), disabled: false, hint: 'Running. A two-finger double tap in game returns here.' };
+    } else if (runningKey === current.key && winState === 1) {
+      play = { title: 'Starting…', onPress: () => {}, disabled: true, hint: 'Setting up JIT and Windows; the first start takes longer.' };
+    } else if (gow3Used) {
+      play = reopen(`${GAME_TITLE} used JIT in this launch.`);
+    } else if (windowsUsed) {
+      play = reopen(winState === -1 ? `The last start failed: ${winStatus?.failure ?? ''}.` : 'A Windows game ran in this launch.');
+    } else {
+      play = { title: 'Play', onPress: () => startWindows(g), disabled: busy, hint: 'JIT is enabled when you press Play.' };
+    }
+  } else if (files.started) {
     play = { title: 'Running', onPress: () => {}, disabled: true, hint: 'In game. A two-finger double tap there brings you back here.' };
+  } else if (windowsUsed) {
+    play = reopen('A Windows game ran in this launch.');
   } else if (!filesReady) {
     play = { title: 'Add game files', onPress: () => setTab('setup'), disabled: false, hint: `Copy your own dump in with the Files app (${APP_NAME} › gow3).` };
   } else if (!jit) {
@@ -342,6 +432,17 @@ export default function App() {
   } else {
     play = { title: 'Play', onPress: () => run(() => Gow3Core.startGame()), disabled: busy, hint: 'Ready.' };
   }
+
+  // A Windows game's program: the next one in its folder (when the launcher picked the wrong .exe).
+  const nextProgram = (g: WindowsGame) => {
+    const next = g.programs[(g.programs.indexOf(g.program) + 1) % g.programs.length];
+    try {
+      Gow3Core.setWindowsGameProgram(g.name, next);
+    } catch (e) {
+      setStatus(String(e));
+    }
+    setWinGames(listWindowsGames());
+  };
 
   const jitText = builtIn
     ? builtIn.available
@@ -362,7 +463,7 @@ export default function App() {
   return (
     <View style={styles.root}>
       {/* Backdrop: the cover, blurred and faded into the background. */}
-      <Image source={cover} style={styles.backdrop} blurRadius={40} onError={() => setCoverFailed(true)} />
+      <Image source={current.cover ?? HELMET} style={styles.backdrop} blurRadius={40} onError={() => current.kind === 'gow3' && setCoverFailed(true)} />
       <View style={[styles.backdropFade, { top: 180, opacity: 0.45 }]} />
       <View style={[styles.backdropFade, { top: 260, opacity: 0.75 }]} />
       <View style={[styles.backdropFade, { top: 340, opacity: 1 }]} />
@@ -382,17 +483,66 @@ export default function App() {
       <ScrollView contentContainerStyle={styles.content}>
         {tab === 'home' ? (
           <>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shelf}>
+              {games.map((g) => (
+                <Pressable key={g.key} onPress={() => setSelected(g.key)} style={({ pressed }) => [styles.shelfTile, pressed && styles.pressed]}>
+                  <View style={[styles.shelfFrame, g.key === current.key && styles.shelfFrameActive]}>
+                    <Cover source={g.cover} title={g.title} size={76} />
+                  </View>
+                  <Text style={[styles.shelfTitle, g.key === current.key && styles.shelfTitleActive]} numberOfLines={1}>
+                    {g.title}
+                  </Text>
+                </Pressable>
+              ))}
+              {hasWindows ? (
+                <Pressable
+                  onPress={() => {
+                    setStatus(`Add a Windows game: copy its installed folder into Files › ${APP_NAME} › wine › drive_c, then reopen the app. A cover.jpg in the folder becomes its cover.`);
+                    setWinGames(listWindowsGames());
+                  }}
+                  style={({ pressed }) => [styles.shelfTile, pressed && styles.pressed]}
+                >
+                  <View style={styles.shelfFrame}>
+                    <View style={[styles.cover, styles.monogram, styles.addTile]}>
+                      <Text style={styles.addGlyph}>+</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.shelfTitle}>Add game</Text>
+                </Pressable>
+              ) : null}
+            </ScrollView>
+
             <View style={styles.hero}>
-              <Image source={cover} style={styles.cover} onError={() => setCoverFailed(true)} />
+              <Cover source={current.cover} title={current.title} size={132} onError={() => current.kind === 'gow3' && setCoverFailed(true)} />
               <View style={styles.heroInfo}>
-                <Text style={styles.platform}>PS4 · REMASTERED</Text>
-                <Text style={styles.gameTitle}>{GAME_TITLE}</Text>
+                <Text style={styles.platform}>{current.platform}</Text>
+                <Text style={styles.gameTitle} numberOfLines={3}>
+                  {current.title}
+                </Text>
                 <View style={styles.pills}>
-                  <Pill label={jit ? 'JIT ready' : 'JIT needed'} good={jit} />
-                  <Pill label={filesReady ? 'Installed' : `${missing} missing`} good={filesReady} />
+                  {current.kind === 'gow3' ? (
+                    <>
+                      <Pill label={jit ? 'JIT ready' : 'JIT needed'} good={jit} />
+                      <Pill label={filesReady ? 'Installed' : `${missing} missing`} good={filesReady} />
+                    </>
+                  ) : (
+                    <>
+                      <Pill label={runningKey === current.key && winState === 2 ? 'Running' : 'Installed'} good />
+                      <Pill label="Wine · FEX · DXMT" good />
+                    </>
+                  )}
                 </View>
               </View>
             </View>
+            {current.kind === 'windows' && current.win ? (
+              <Pressable onPress={() => current.win && current.win.programs.length > 1 && nextProgram(current.win)} style={styles.programRow}>
+                <Text style={styles.programLabel}>STARTS</Text>
+                <Text style={styles.programName} numberOfLines={1}>
+                  {current.win.program}
+                </Text>
+                {current.win.programs.length > 1 ? <Text style={styles.programChange}>Change</Text> : null}
+              </Pressable>
+            ) : null}
 
             <Pressable
               onPress={play.onPress}
@@ -406,7 +556,7 @@ export default function App() {
 
             <Text style={styles.section}>Quick settings</Text>
             <View style={styles.quickRow}>
-              {hasFpsLimit ? (
+              {hasFpsLimit && current.kind === 'gow3' ? (
                 <QuickTile
                   title="FRAME CAP"
                   value={fpsLimit ? `${fpsLimit} FPS` : 'Off'}
@@ -415,7 +565,7 @@ export default function App() {
                   active={fpsLimit === 30}
                 />
               ) : null}
-              {hasTouchControls ? (
+              {hasTouchControls && current.kind === 'gow3' ? (
                 <QuickTile
                   title="TOUCH"
                   value={touchControls ? 'On' : 'Off'}
@@ -437,11 +587,20 @@ export default function App() {
             </View>
 
             <Text style={styles.section}>Tips</Text>
-            <View style={styles.panel}>
-              <Text style={styles.body}>• Menu (touch) or R3 + L2 opens the settings and cheats menu in game.</Text>
-              <Text style={styles.body}>• Two-finger double tap on an empty spot returns here; the game keeps running.</Text>
-              <Text style={styles.body}>• A 30 FPS cap keeps heavy fights steady and the phone cooler.</Text>
-            </View>
+            {current.kind === 'gow3' ? (
+              <View style={styles.panel}>
+                <Text style={styles.body}>• Menu (touch) or R3 + L2 opens the settings and cheats menu in game.</Text>
+                <Text style={styles.body}>• Two-finger double tap on an empty spot returns here; the game keeps running.</Text>
+                <Text style={styles.body}>• A 30 FPS cap keeps heavy fights steady and the phone cooler.</Text>
+              </View>
+            ) : (
+              <View style={styles.panel}>
+                <Text style={styles.body}>• Play with a controller: while one is connected, touches are not sent to the game as a mouse.</Text>
+                <Text style={styles.body}>• Two-finger double tap in game returns here; Resume goes back. The game keeps running.</Text>
+                <Text style={styles.body}>{`• Wrong program? Tap STARTS to pick another .exe from the game's folder.`}</Text>
+                <Text style={styles.body}>{`• Settings for all Windows games: Files › ${APP_NAME} › madeira.cfg (Madeira's format). Log: madeira-log.txt.`}</Text>
+              </View>
+            )}
           </>
         ) : null}
 
@@ -596,6 +755,20 @@ const styles = StyleSheet.create({
   clock: { color: color.text, fontSize: 16, fontWeight: '600', fontVariant: ['tabular-nums'] },
   content: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 120, gap: 14 },
   hero: { flexDirection: 'row', gap: 16, alignItems: 'flex-end' },
+  shelf: { gap: 14, paddingBottom: 6, paddingRight: 8 },
+  shelfTile: { width: 84, alignItems: 'center', gap: 6 },
+  shelfFrame: { padding: 3, borderRadius: 16, borderWidth: 2, borderColor: 'transparent' },
+  shelfFrameActive: { borderColor: color.ember },
+  shelfTitle: { color: color.muted, fontSize: 11, fontWeight: '600', maxWidth: 84 },
+  shelfTitleActive: { color: color.text },
+  monogram: { backgroundColor: color.raised, alignItems: 'center', justifyContent: 'center' },
+  monogramText: { color: color.gold, fontWeight: '800', letterSpacing: 1 },
+  addTile: { width: 76, height: 76, borderRadius: 11, borderStyle: 'dashed' },
+  addGlyph: { color: color.muted, fontSize: 30, fontWeight: '300' },
+  programRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: color.panel, borderRadius: 14, borderWidth: 1, borderColor: color.border, paddingHorizontal: 14, paddingVertical: 10 },
+  programLabel: { color: color.faint, fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
+  programName: { flex: 1, color: color.text, fontSize: 13, fontWeight: '600' },
+  programChange: { color: color.gold, fontSize: 13, fontWeight: '700' },
   cover: { width: 132, height: 132, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
   heroInfo: { flex: 1, gap: 6, paddingBottom: 4 },
   platform: { color: color.gold, fontSize: 11, fontWeight: '700', letterSpacing: 2 },

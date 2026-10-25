@@ -447,6 +447,21 @@ public class Gow3CoreModule: Module {
       return status
     }
 
+    /// The launcher's Windows games: every game folder in Documents/wine/drive_c (Gow3WineEngine.games).
+    Function("windowsGames") { () -> [[String: Any]] in
+      Gow3WineEngine.games()
+    }
+
+    /// The program Play starts for a game folder (relative to it), kept in Documents/wine/olympus-games.json.
+    Function("setWindowsGameProgram") { (folder: String, program: String) in
+      try Gow3WineEngine.setProgram(program, forGame: folder)
+    }
+
+    /// Shows the running Windows game again (after a two-finger double tap left it). False without one.
+    AsyncFunction("resumeWindowsGame") { () -> Bool in
+      Gow3WineGameViewController.resume()
+    }.runOnQueue(.main)
+
     /// Starts a Windows program: the Windows view is presented and its layer handed to DXMT, then JIT is
     /// enabled (the built-in helper, or StikDebug) and, while the debugger is attached, winecore_start
     /// prepares Madeira's JIT pool, detaches it and starts wineserver and the program. `exe` is a C:\ path.

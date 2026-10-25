@@ -51,6 +51,13 @@ declare class Gow3CoreModule extends NativeModule<{}> {
   windowsStatus(): { framework: boolean; resources: boolean; folder: string; programs: string[]; state: number; failure: string; earlyClaim: string };
   /** The next launch reserves the Windows engine's address space before the app starts (close and reopen the app). */
   prepareWindowsLaunch(): void;
+  /** The launcher's Windows games: each game folder in Documents/wine/drive_c, its programs (relative to the
+   *  folder), the one Play starts (`program`, and as a C:\ path `exe`), and a cover file URL or ''. */
+  windowsGames(): Array<{ name: string; programs: string[]; program: string; exe: string; cover: string }>;
+  /** Picks the program Play starts for a game folder. */
+  setWindowsGameProgram(folder: string, program: string): void;
+  /** Shows the running Windows game again. False when none is running. */
+  resumeWindowsGame(): Promise<boolean>;
   /** Presents the Windows view, enables JIT (built-in helper or StikDebug) and starts `exe` (a C:\ path). Resolves 0 on success. */
   startWindowsGame(exe: string, args: string, builtIn: boolean): Promise<number>;
   /** The last 24 KiB of Documents/madeira-log.txt (Wine, FEX and DXMT). */

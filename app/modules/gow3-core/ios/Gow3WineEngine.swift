@@ -175,6 +175,80 @@ final class Gow3WineEngine {
     }
     return found.sorted()
   }
+
+  /// Wine's own folders in drive_c, which are not games.
+  private static let prefixFolders: Set<String> = ["windows", "users", "ProgramData", "Program Files", "Program Files (x86)"]
+
+  /// The program the launcher starts for a game folder, when the user did not pick one: a Unity game's
+  /// <Name>.exe beside <Name>_Data, else the largest program that is not a known helper (crash handlers,
+  /// uninstallers, installers, redistributables).
+  private static func defaultProgram(_ exes: [String], in folder: URL) -> String? {
+    let fm = FileManager.default
+    if let unity = exes.first(where: { !$0.contains("/") && fm.fileExists(atPath: folder.appendingPathComponent(
+      String($0.dropLast(4)) + "_Data").path) }) { return unity }
+    let helpers = ["crash", "unins", "setup", "install", "redist", "vcredist", "dxsetup", "dxwebsetup", "quicksfv", "report"]
+    let candidates = exes.filter { exe in
+      let name = (exe as NSString).lastPathComponent.lowercased()
+      return !helpers.contains { name.contains($0) } && !exe.lowercased().contains("redist")
+    }
+    func size(_ exe: String) -> Int {
+      (try? fm.attributesOfItem(atPath: folder.appendingPathComponent(exe).path)[.size] as? Int) ?? 0
+    }
+    // Shallowest first (the game's own folder), then the largest.
+    return candidates.min { a, b in
+      let da = a.split(separator: "/").count, db = b.split(separator: "/").count
+      return da != db ? da < db : size(a) > size(b)
+    }
+  }
+
+  /// Documents/wine/olympus-games.json: the program the user picked for a game folder.
+  private static var choicesURL: URL { prefix.appendingPathComponent("olympus-games.json") }
+  private static func choices() -> [String: String] {
+    guard let data = try? Data(contentsOf: choicesURL),
+          let map = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return [:] }
+    return map
+  }
+  static func setProgram(_ exe: String, forGame folder: String) throws {
+    var map = choices()
+    map[folder] = exe
+    try FileManager.default.createDirectory(at: prefix, withIntermediateDirectories: true)
+    try JSONSerialization.data(withJSONObject: map, options: [.prettyPrinted, .sortedKeys]).write(to: choicesURL)
+  }
+
+  /// Every game folder in drive_c (each top-level folder that holds a program), for the launcher: its name,
+  /// its programs (relative to the folder), the one Play starts (as a C:\ path), and its cover: cover.jpg or
+  /// cover.png the user put in the folder, else a Unity game's own icon, else none.
+  static func games() -> [[String: Any]] {
+    let fm = FileManager.default
+    let root = driveC
+    try? fm.createDirectory(at: root, withIntermediateDirectories: true)
+    let picked = choices()
+    var games: [[String: Any]] = []
+    for name in ((try? fm.contentsOfDirectory(atPath: root.path)) ?? []).sorted() {
+      guard !name.hasPrefix("."), !prefixFolders.contains(name) else { continue }
+      let folder = root.appendingPathComponent(name)
+      var isDir: ObjCBool = false
+      guard fm.fileExists(atPath: folder.path, isDirectory: &isDir), isDir.boolValue,
+            let walker = fm.enumerator(atPath: folder.path) else { continue }
+      var exes: [String] = []
+      while let relative = walker.nextObject() as? String {
+        if relative.split(separator: "/").count > 3 { walker.skipDescendants(); continue }
+        if (relative as NSString).pathExtension.lowercased() == "exe" { exes.append(relative) }
+      }
+      guard !exes.isEmpty else { continue }
+      exes.sort()
+      let program = picked[name].flatMap { exes.contains($0) ? $0 : nil } ?? defaultProgram(exes, in: folder) ?? exes[0]
+      var cover = ""
+      let unity = String(program.dropLast(4)) + "_Data/Resources/UnityPlayer.png"
+      for candidate in ["cover.jpg", "cover.png", "cover.jpeg", unity] where fm.fileExists(atPath: folder.appendingPathComponent(candidate).path) {
+        cover = folder.appendingPathComponent(candidate).absoluteString
+        break
+      }
+      games.append(["name": name, "programs": exes, "program": program,
+                    "exe": "C:\\" + (name + "/" + program).replacingOccurrences(of: "/", with: "\\"), "cover": cover])
+    }
+    return games
+  }
 }
 
 /// The Windows game's screen: DXMT presents into this view's CAMetalLayer, touches become the guest's
@@ -195,11 +269,37 @@ final class Gow3WineGameViewController: UIViewController {
     view = metalView
   }
 
+  /// The session's view: kept after it is dismissed, so Resume shows the same layer DXMT presents into.
+  static var current: Gow3WineGameViewController?
+
   func attach(_ engine: Gow3WineEngine) {
     self.engine = engine
     engine.setLayer(metalView.metalLayer)
     link = CADisplayLink(target: self, selector: #selector(pollControllers))
     link?.add(to: .main, forMode: .common)
+    Self.current = self
+  }
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    // Back to the launcher, as in GoW3: a two-finger double tap. The game keeps running.
+    let leave = UITapGestureRecognizer(target: self, action: #selector(leaveGame))
+    leave.numberOfTouchesRequired = 2
+    leave.numberOfTapsRequired = 2
+    leave.cancelsTouchesInView = false
+    view.addGestureRecognizer(leave)
+  }
+
+  @objc private func leaveGame() { dismiss(animated: false) }
+
+  /// Shows the running session's view again over the topmost view controller.
+  static func resume() -> Bool {
+    guard let controller = current, controller.presentingViewController == nil else { return current != nil }
+    let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
+    guard var top = windows.first(where: \.isKeyWindow)?.rootViewController else { return false }
+    while let presented = top.presentedViewController { top = presented }
+    top.present(controller, animated: false)
+    return true
   }
 
   override func viewDidLayoutSubviews() {
