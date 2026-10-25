@@ -154,21 +154,22 @@ final class Gow3WineEngine {
 
   func disconnectGamepad(_ index: Int32) { gamepadFn(index, nil) }
 
-  /// Programs under drive_c (up to four folders deep), as C:\ paths, for the test screen.
+  /// Programs under drive_c (up to four folders deep), as C:\ paths, for the test screen. The enumerator
+  /// gives paths relative to drive_c: the URLs it hands out can start with /private/var where drive_c's own
+  /// path starts with /var, so cutting drive_c's length off them gave C:\drive_c\... (0.2.0's first try).
   static func programs() -> [String] {
     let root = driveC
     try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil,
-                                                      options: [.skipsHiddenFiles]) else { return [] }
+    guard let walker = FileManager.default.enumerator(atPath: root.path) else { return [] }
     var found: [String] = []
-    for case let url as URL in walker {
-      if walker.level > 4 { walker.skipDescendants(); continue }
-      let relative = url.path.dropFirst(root.path.count + 1)
+    while let relative = walker.nextObject() as? String {
+      let depth = relative.split(separator: "/").count
+      if depth > 5 { walker.skipDescendants(); continue }
       // The prefix's own Windows folders hold Wine's programs, not games.
-      if walker.level == 1, ["windows", "users", "ProgramData", "Program Files", "Program Files (x86)"].contains(String(relative)) {
+      if depth == 1, ["windows", "users", "ProgramData", "Program Files", "Program Files (x86)"].contains(relative) {
         walker.skipDescendants(); continue
       }
-      if url.pathExtension.lowercased() == "exe" {
+      if (relative as NSString).pathExtension.lowercased() == "exe" {
         found.append("C:\\" + relative.replacingOccurrences(of: "/", with: "\\"))
       }
     }
