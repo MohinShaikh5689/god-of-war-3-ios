@@ -16,8 +16,8 @@ Branch: `wine-engine`. Madeira is the submodule `native/third_party/Madeira`, pi
   launch: both install signal handlers, own a JIT pool and reserve address space. Switching engines
   means reopening the app.
 - **Steam later**: the first phases run games from a folder the user copies in through the Files app,
-  like the GoW3 dump. Valve's own Windows Steam client (Madeira Dock's approach: the real client inside
-  Wine) comes in a later phase, since Sekiro needs it to start. Madeira's native Steam sign-in, library
+  like the GoW3 dump; Sekiro is tested that way, from a game folder the user supplies. Valve's own
+  Windows Steam client (Madeira Dock's approach: the real client inside Wine) is an optional later phase. Madeira's native Steam sign-in, library
   and Cloud code is not planned.
 - **No Madeira UI**: only its engine core is taken (below). The launcher is ours, in React Native: a
   console-style home with one tile per game (GoW3, then each Windows game), shared JIT setup and
@@ -31,7 +31,7 @@ Branch: `wine-engine`. Madeira is the submodule `native/third_party/Madeira`, pi
 | iOS-side libraries (FEXCore, ntdll/win32u unix, wineserver, DXMT + LLVM 15, FFmpeg, GnuTLS) | `build/*`, built by `native/wine/scripts/build-wine-ios.sh` | linked into `WineCore.framework` |
 | Engine bridge: FEX init, wineserver/process start, display shim, JIT allocator, Winios (window/input), pad output | `app/Madeira/{FEXBridge,JITAllocator,IOSDisplayShim,WineServerBridge,WineProcessBridge,PadOutput}*`, `Winios/` | `WineCore.framework` with a small C API (`native/wine/include/winecore.h`) |
 | Windows side: the arm64ec DLL farm (261 DLLs incl. `ntdll`, `xtajit64`, `winemetal`, `d3d11`, `dxgi`, `d3d12`), NLS files, prefix template, converter dylib | `app/Madeira/{arm64ec-windows,nls,prefix-template.tar.gz,d3d12}` (tracked prebuilt) | app bundle resources under `Wine/` |
-| Later (phase 6) | `madeira-dock` (Valve's Steam client inside Wine) | the Steam client for Sekiro |
+| Later (phase 6, optional) | `madeira-dock` (Valve's Steam client inside Wine) | |
 | Not taken | SwiftUI app, `SwiftSteam` (native sign-in/library), Cloud saves, Wine Mono, WoW64 (32-bit) | |
 
 ## Inputs Madeira does not record
@@ -55,15 +55,12 @@ Its `docs/BUILDING.md` marks most steps unverified from a clean checkout. Found 
    framework, so both engines and their FEX copies sit side by side; the Expo module loads the chosen one.
 4. **Console launcher**: the RN home becomes multi-game (tiles, a Windows game import from Files, per-game
    settings: executable, arguments, frame cap, touch layout). GoW3 keeps everything it has now.
-5. **Engine checks with Steam-free programs**: DXMT test programs and D3D11 samples, then memory
-   (8 GB iPhone, with the GoW3 file-backed memory lessons).
-6. **Steam client and Sekiro**: Valve's Windows Steam client in the prefix (from `madeira-dock`), then
-   Sekiro started through it; then performance.
+5. **Sekiro**: boot from the user's game folder, then memory (8 GB iPhone, with the GoW3 file-backed
+   memory lessons) and performance.
+6. **Steam client (optional)**: Valve's Windows Steam client in the prefix, from `madeira-dock`.
 
 ## Risks
-- **Sekiro and Steam**: Sekiro's executable expects the Steam client running, so Sekiro itself is
-  tested only from phase 6; until then the engine is tested with programs that need no Steam.
-  The Steam client is a heavy Chromium-based program, which is another memory cost on 8 GB.
+- **Steam client**: a heavy Chromium-based program, another memory cost on 8 GB if phase 6 happens.
 - **Memory**: a 64-bit D3D11 game through Wine and FEX on 8 GB; Madeira's "Memory+" entitlement
   (increased memory limit) is needed, which AltStore keeps.
 - **Debug only**: Madeira notes that Release builds have crashed the guest; the engine framework may
