@@ -67,6 +67,16 @@ enum MadeiraConfig {
     }
 }
 
+/// Madeira's isDebuggerAttached (EntitlementChecker.swift): P_TRACED, set while a debugger is attached.
+func isDebuggerAttached() -> Bool {
+    var info = kinfo_proc()
+    var size = MemoryLayout<kinfo_proc>.stride
+    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+    let ret = sysctl(&mib, UInt32(mib.count), &info, &size, nil, 0)
+    guard ret == 0 else { return false }
+    return (info.kp_proc.p_flag & P_TRACED) != 0
+}
+
 /// Madeira's SigningStatus (EntitlementChecker.swift), reduced to the CS_DEBUGGED flag.
 struct SigningStatus {
     let known: Bool
