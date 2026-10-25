@@ -20,8 +20,27 @@ const hasTouchControls = typeof Gow3Core.touchControlsEnabled === 'function';
 const hasFpsLimit = typeof Gow3Core.fpsLimit === 'function';
 const FPS_LIMITS = [30, 60, 0];
 // The Windows engine is new in 0.2.0, its game list in 0.2.1; older installed IPAs lack them.
+const hasWindowsEngine = typeof Gow3Core.windowsStatus === 'function';
 const hasWindows = typeof Gow3Core.windowsGames === 'function';
-const listWindowsGames = () => (hasWindows ? Gow3Core.windowsGames() : []);
+const HELPER_EXE = /crash|unins|setup|install|redist|dxweb|quicksfv|report/i;
+/** 0.2.0 has no game list, only its .exe list, whose paths all start C:\drive_c\ (its path bug; on the
+ *  phone the game folders were moved into drive_c\drive_c so those paths work). One game per top-level
+ *  folder, started by its first program that is not a helper. */
+function legacyWindowsGames(): WindowsGame[] {
+  if (!hasWindowsEngine) return [];
+  const groups = new Map<string, string[]>();
+  for (const exe of Gow3Core.windowsStatus().programs) {
+    const parts = exe.replace(/^C:\\/, '').replace(/^drive_c\\/, '').split('\\');
+    if (parts.length < 2 || parts[0] === 'drive_c') continue;
+    groups.set(parts[0], [...(groups.get(parts[0]) ?? []), exe]);
+  }
+  return [...groups].map(([name, exes]) => {
+    const exe = exes.find((e) => !HELPER_EXE.test(e.split('\\').pop() ?? '')) ?? exes[0];
+    const program = exe.split('\\').slice(3).join('/');
+    return { name, programs: [program], program, exe, cover: '' };
+  });
+}
+const listWindowsGames = (): WindowsGame[] => (hasWindows ? Gow3Core.windowsGames() : legacyWindowsGames());
 const hasFpsMeter = typeof Gow3Core.windowsFpsMeter === 'function';
 const readWindowsStatus = () => (typeof Gow3Core.windowsStatus === 'function' ? Gow3Core.windowsStatus() : null);
 type WindowsGame = ReturnType<typeof Gow3Core.windowsGames>[number];
@@ -413,7 +432,9 @@ export default function App() {
   if (current.kind === 'windows' && current.win) {
     const g = current.win;
     if (runningKey === current.key && winState === 2) {
-      play = { title: 'Resume', onPress: () => Gow3Core.resumeWindowsGame(), disabled: false, hint: 'Running. A two-finger double tap in game returns here.' };
+      play = hasWindows
+        ? { title: 'Resume', onPress: () => Gow3Core.resumeWindowsGame(), disabled: false, hint: 'Running. A two-finger double tap in game returns here.' }
+        : { title: 'Running', onPress: () => {}, disabled: true, hint: 'Running. This build has no way back from the game; the next one does.' };
     } else if (runningKey === current.key && winState === 1) {
       play = { title: 'Starting…', onPress: () => {}, disabled: true, hint: 'Setting up JIT and Windows; the first start takes longer.' };
     } else if (gow3Used) {
@@ -496,7 +517,7 @@ export default function App() {
                   </Text>
                 </Pressable>
               ))}
-              {hasWindows ? (
+              {hasWindowsEngine ? (
                 <Pressable
                   onPress={() => {
                     setStatus(`Add a Windows game: copy its installed folder into Files › ${APP_NAME} › wine › drive_c, then reopen the app. A cover.jpg in the folder becomes its cover.`);
@@ -537,7 +558,7 @@ export default function App() {
               </View>
             </View>
             {current.kind === 'windows' && current.win ? (
-              <Pressable onPress={() => current.win && current.win.programs.length > 1 && nextProgram(current.win)} style={styles.programRow}>
+              <Pressable onPress={() => hasWindows && current.win && current.win.programs.length > 1 && nextProgram(current.win)} style={styles.programRow}>
                 <Text style={styles.programLabel}>STARTS</Text>
                 <Text style={styles.programName} numberOfLines={1}>
                   {current.win.program}
