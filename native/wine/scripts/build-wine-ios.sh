@@ -75,7 +75,22 @@ stage_ffmpeg() {
     [ -f "$TC/ffmpeg-ios/include/libavcodec/avcodec.h" ] && [ -f "$M/app/Madeira/libavcodec.a" ] && return
     bash "$M/build/ffmpeg/build.sh"
 }
-stage_fex() { bash "$M/build/fex-ios/build.sh"; }
+# fex-ios/build.sh's configure (Madeira's options) stops on CMake 4 and Xcode 26: FEX needs the processor
+# named for iOS and TUNE_CPU off, as native/scripts/build-ios.sh found for our own FEX. Configured here
+# with those added; the script then only builds.
+stage_fex() {
+    local b="$M/FEX/build-ios"
+    [ -f "$b/CMakeCache.txt" ] ||
+        cmake -S "$M/FEX" -B "$b" -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_SYSTEM_PROCESSOR=arm64 \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF -DBUILD_FEXCONFIG=OFF \
+            -DBUILD_FEX_LINUX_TESTS=OFF -DENABLE_FEX_ALLOCATOR=OFF -DENABLE_ASSERTIONS=OFF \
+            -DENABLE_CLANG_THUNKS=ON -DENABLE_CCACHE=ON -DENABLE_LTO=OFF -DENABLE_ZYDIS=OFF \
+            -DENABLE_GDB_SYMBOLS=OFF -DTUNE_CPU=none -DTUNE_ARCH=generic \
+            -DCMAKE_DISABLE_FIND_PACKAGE_fmt=ON -DCMAKE_DISABLE_FIND_PACKAGE_unordered_dense=ON \
+            -DCMAKE_DISABLE_FIND_PACKAGE_range-v3=ON
+    bash "$M/build/fex-ios/build.sh"
+}
 stage_ntdll() { bash "$M/build/ntdll-unix/build.sh"; }
 stage_win32u() { bash "$M/build/win32u-unix/build.sh"; }
 
@@ -115,7 +130,7 @@ stage_wineserver() {
 # instead of --gc-sections, which Apple's linker rejects).
 stage_llvm() {
     local src="$TC/llvm-project" host="$TC/llvm-host-build" ios="$TC/llvm-ios-build"
-    [ -f "$ios/lib/libLLVMCore.a" ] && return
+    [ -f "$ios/.done" ] && return
     if [ ! -d "$src/llvm" ]; then
         git clone --depth 1 --branch "$LLVM_TAG" --filter=blob:none --sparse \
             https://github.com/llvm/llvm-project.git "$src"
@@ -132,15 +147,25 @@ stage_llvm() {
         -DLLVM_HOST_TRIPLE=arm64-apple-ios17.0 -DLLVM_DEFAULT_TARGET_TRIPLE=arm64-apple-ios17.0 \
         -DLLVM_TARGET_ARCH=host -DLLVM_TABLEGEN="$host/bin/llvm-tblgen" \
         -DLLVM_BUILD_TOOLS=OFF -DLLVM_BUILD_UTILS=OFF
-    cmake --build "$ios"
+    # Only the libraries: LLVM's tools (llvm-lib, the fuzzers) are still built with tools off, and
+    # their link fails on iOS (ld: unknown options: -z). airconv needs none of them.
+    local libs
+    libs=$(ninja -C "$ios" -t targets all | sed -n 's#^\(lib/libLLVM[A-Za-z0-9]*\.a\):.*#\1#p')
+    [ -n "$libs" ] || { echo "no libLLVM*.a targets in $ios"; return 1; }
+    ninja -C "$ios" $libs
+    touch "$ios/.done"
 }
 
 # dxmt-ios/build.sh builds libdxmt_unix.a; the app links it merged with LLVM's libraries.
 stage_dxmt() {
     xcrun -sdk iphoneos metal --version >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
     local d="$M/build/dxmt-ios"
-    rm -f "$d/libdxmt_combined.a"
-    bash "$d/build.sh"
+    rm -f "$d/libdxmt_combined.a" "$d/libdxmt_unix.a" "$d"/obj/*.err
+    if ! bash "$d/build.sh"; then
+        local e
+        for e in "$d"/obj/*.err; do [ -s "$e" ] && { echo "--- $(basename "$e")"; head -n 40 "$e"; }; done
+        return 1
+    fi
     libtool -static -o "$d/libdxmt_combined.a" "$d/libdxmt_unix.a" "$TC"/llvm-ios-build/lib/libLLVM*.a
 }
 
@@ -161,8 +186,13 @@ STAGES=(mingw freetype winehost gnutls ffmpeg fex ntdll win32u wineserver llvm d
 failed=()
 for s in "${STAGES[@]}"; do
     echo "::group::$s"
-    # Shown live (a quiet step looks stuck for the hour LLVM takes) and kept per stage.
-    if ( set -euo pipefail; "stage_$s" ) 2>&1 | tee "$LOGS/$s.log"; then
+    # Shown live (a quiet step looks stuck for the hour LLVM takes) and kept per stage. Not run as an
+    # `if` condition: bash ignores set -e inside one, so a failing command would not stop the stage.
+    set +e
+    ( set -euo pipefail; "stage_$s" ) 2>&1 | tee "$LOGS/$s.log"
+    status=${PIPESTATUS[0]}
+    set -e
+    if [ "$status" -eq 0 ]; then
         echo "== $s: OK"
     else
         echo "== $s: FAILED (log: native/wine/out/logs/$s.log)"

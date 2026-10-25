@@ -26,6 +26,7 @@ env:
     native/third_party/Madeira/toolchains/llvm-host-build/bin
     native/third_party/Madeira/toolchains/llvm-ios-build/include
     native/third_party/Madeira/toolchains/llvm-ios-build/lib/*.a
+    native/third_party/Madeira/toolchains/llvm-ios-build/.done
   DEPS_PATHS: |
     native/third_party/Madeira/toolchains/llvm-mingw-20260421-ucrt-macos-universal
     native/third_party/Madeira/toolchains/gnutls-ios
@@ -89,7 +90,7 @@ jobs:
         run: bash native/wine/scripts/build-wine-ios.sh
 
       - name: Save LLVM
-        if: always() && hashFiles('native/third_party/Madeira/toolchains/llvm-ios-build/lib/libLLVMCore.a') != ''
+        if: always() && hashFiles('native/third_party/Madeira/toolchains/llvm-ios-build/.done') != ''
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
