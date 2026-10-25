@@ -47,7 +47,10 @@ Its `docs/BUILDING.md` marks most steps unverified from a clean checkout. Found 
 
 ## Phases
 1. **iOS libraries on CI**: `.github/workflows/wine.yml` builds every library from a clean checkout
-   (artifact `wine-ios-libs`, logs in `wine-ios-logs`). Expect several fix-up rounds. IN PROGRESS.
+   (artifact `wine-ios-libs`, logs in `wine-ios-logs`). DONE (2026-10-25, d65fe17): all 12 stages pass;
+   three runs, then 9 minutes with the caches (LLVM, the tarball dependencies, ccache). Beyond the four
+   inputs above, the fixes were FEX's configure for iOS (`CMAKE_SYSTEM_PROCESSOR`, `TUNE_CPU=none`), only
+   LLVM's libraries (its tools fail to link for iOS), and airconv's three embedded AIR shader headers.
 2. **WineCore.framework**: the bridge sources plus the libraries as one dynamic framework with a C API
    (start wineserver, init the prefix, run an `.exe` with arguments, attach a `CAMetalLayer` view,
    input, stop). Exit: a D3D11 test program from `Madeira/tests/dxmt` draws on the iPhone.
