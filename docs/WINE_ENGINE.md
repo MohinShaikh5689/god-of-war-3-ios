@@ -58,7 +58,11 @@ Its `docs/BUILDING.md` marks most steps unverified from a clean checkout. Found 
      `native/wine/src`: `MadeiraShims.swift` (the three app types the pool code uses: `LogStore`,
      `MadeiraConfig`, `SigningStatus`) and `WineSession.swift` (`winecore_start` in the order of Madeira's
      `runWineFullSequence`: environment, DXMT options, JIT pool, debugger detach, wineserver, process).
-     Compiled `-O0` like Madeira's Debug configuration, the one it runs games with.
+     Compiled `-O0` like Madeira's Debug configuration, the one it runs games with. DONE (2026-10-25,
+     e4b9748, four CI rounds): the gaps were `isDebuggerAttached` (a free function the pool code also
+     uses), FEX's `JemallocLibs` (the `FEXCore::Allocator` hooks Madeira's app links but its script does
+     not build), and three globals both wineserver and ntdll define (`supported_machines_count`,
+     `native_machine`, `server_start_time`), renamed with the `ws_` prefix Madeira's sweep uses.
    - b. **In the app**: the framework is embedded but loaded with `dlopen` only for a Windows session.
      Madeira reserves the low address space a JIT pool and fixed-base `.exe` images need in a constructor
      (`madeira_early_va_claim` in `JITAllocator.c`: 128 MB at 0x140000000 and up to 1 GB above it) before
