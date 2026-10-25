@@ -151,10 +151,11 @@ STAGES=(mingw freetype winehost gnutls ffmpeg fex ntdll win32u wineserver llvm d
 failed=()
 for s in "${STAGES[@]}"; do
     echo "::group::$s"
-    if ( set -euo pipefail; "stage_$s" ) >"$LOGS/$s.log" 2>&1; then
-        tail -n 5 "$LOGS/$s.log"; echo "== $s: OK"
+    # Shown live (a quiet step looks stuck for the hour LLVM takes) and kept per stage.
+    if ( set -euo pipefail; "stage_$s" ) 2>&1 | tee "$LOGS/$s.log"; then
+        echo "== $s: OK"
     else
-        tail -n 60 "$LOGS/$s.log"; echo "== $s: FAILED (log: native/wine/out/logs/$s.log)"
+        echo "== $s: FAILED (log: native/wine/out/logs/$s.log)"
         failed+=("$s")
     fi
     echo "::endgroup::"
