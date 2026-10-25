@@ -41,7 +41,8 @@ jobs:
       - name: Native core cache key
         id: native-key
         run: |
-          fex=$(git ls-tree -r HEAD native/third_party native/runtime/third_party native/runtime/gpu/third_party | grep '^160000' | shasum | cut -c1-12)
+          # Madeira (the Windows engine, cached on its own below) does not change the GoW3 core.
+          fex=$(git ls-tree -r HEAD native/third_party native/runtime/third_party native/runtime/gpu/third_party | grep '^160000' | grep -v 'native/third_party/Madeira$' | shasum | cut -c1-12)
           xcode=$(xcodebuild -version | shasum | cut -c1-12)
           echo "key=native-${{ runner.os }}-$fex-$xcode-${{ hashFiles('native/cmake/**', 'native/cpu/**', 'native/jit/**', 'native/gpu/**', 'native/selftest/**', 'native/include/**', 'native/runtime/**', 'native/patches/**', 'native/scripts/build-ios.sh', 'native/scripts/fetch-submodules.sh') }}" >> "$GITHUB_OUTPUT"
 
@@ -77,16 +78,38 @@ jobs:
           brew install glslang boost
           native/scripts/build-ios.sh build/native-ios
 
-      # The Windows engine (docs/WINE_ENGINE.md): Madeira's libraries and WineCore.framework, as the
-      # Wine engine workflow builds them. LLVM 15 for iOS and the tarball dependencies come from the caches
-      # that workflow saves (same keys); a branch that has none builds them (about an hour, once).
+      # The Windows engine (docs/WINE_ENGINE.md): WineCore.framework, cached by the Madeira commit and
+      # native/wine. Built only on a miss, as the Wine engine workflow builds it: LLVM 15 for iOS and the
+      # tarball dependencies come from the caches that workflow saves (same keys); a branch that has none
+      # builds them (about an hour, once). On a hit only Madeira itself is fetched, for the resources
+      # embed-wine.sh copies into the app.
+      - name: Wine engine cache key
+        id: wine-key
+        run: |
+          madeira=$(git ls-tree HEAD native/third_party/Madeira | awk '{print $3}' | cut -c1-12)
+          xcode=$(xcodebuild -version | shasum | cut -c1-12)
+          echo "key=winecore-$madeira-$xcode-${{ hashFiles('native/wine/**') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore WineCore.framework
+        id: wine-cache
+        uses: actions/cache@v4
+        with:
+          path: native/wine/out/WineCore.framework
+          key: ${{ steps.wine-key.outputs.key }}
+
+      - name: Madeira (resources only)
+        if: steps.wine-cache.outputs.cache-hit == 'true'
+        run: git submodule update --init --depth 1 native/third_party/Madeira
+
       - name: Wine engine submodules
+        if: steps.wine-cache.outputs.cache-hit != 'true'
         run: |
           native/wine/scripts/fetch-submodules.sh
           sums=$(cat native/third_party/Madeira/build/gnutls-ios/src/SHA256SUMS native/third_party/Madeira/build/ffmpeg/src/SHA256SUMS | shasum | cut -c1-16)
           echo "WINE_DEPS_KEY=wine-deps-v1-$sums" >> "$GITHUB_ENV"
 
       - name: Restore the Wine engine's LLVM
+        if: steps.wine-cache.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -98,6 +121,7 @@ jobs:
           key: llvm-15.0.7-ios17-v1
 
       - name: Restore the Wine engine's dependencies
+        if: steps.wine-cache.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -113,6 +137,7 @@ jobs:
           key: ${{ env.WINE_DEPS_KEY }}
 
       - name: Wine engine (WineCore.framework)
+        if: steps.wine-cache.outputs.cache-hit != 'true'
         run: |
           brew install bison flex meson
           native/wine/scripts/build-wine-ios.sh
