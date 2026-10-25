@@ -126,6 +126,17 @@ stage_wineserver() {
     rm -f "$M/app/Madeira/libwineserver.a" "$s/obj/libwineserver.a"
     xcrun -sdk iphoneos ar rcs "$M/app/Madeira/libwineserver.a" "$obj"/*.o
     bash "$s/build.sh" all
+    # Three more globals that wineserver (registry.c, request_ios.c) and ntdll's unix side (server_ios.c)
+    # both define, which the one-process link rejects as duplicates. They get the ws_ prefix the script's
+    # own objcopy sweep gives the others it lists, so each side keeps its own copy as in separate processes.
+    local lib="$M/app/Madeira/libwineserver.a" tmp="$obj/rename" sym f args=()
+    for sym in supported_machines_count native_machine server_start_time; do
+        args+=(--redefine-sym "_${sym}=_ws_${sym}")
+    done
+    rm -rf "$tmp" && mkdir -p "$tmp"
+    (cd "$tmp" && xcrun -sdk iphoneos ar x "$lib")
+    for f in "$tmp"/*.o; do llvm-objcopy "${args[@]}" "$f"; done
+    rm "$lib" && xcrun -sdk iphoneos ar rcs "$lib" "$tmp"/*.o
 }
 
 # LLVM 15.0.7 for iOS: llvm-tblgen for the macOS host first, then the libraries for iOS with no
