@@ -32,6 +32,8 @@ mkdir -p "$TC" "$LOGS" "$OUT/lib"
 # llvm-objcopy (wineserver's symbol renames) and the mingw compilers (Wine's configure) come from
 # llvm-mingw; bison 3 and flex from Homebrew (macOS ships bison 2.3).
 export PATH="$TC/$MINGW/bin:$(brew --prefix bison)/bin:$(brew --prefix flex)/bin:$PATH"
+# ccache in front of the scripts' `xcrun -sdk iphoneos clang` (shims/xcrun).
+export PATH="$ROOT/native/wine/scripts/shims:$PATH"
 
 stage_mingw() {
     [ -x "$TC/$MINGW/bin/llvm-objcopy" ] && return
@@ -43,6 +45,7 @@ stage_mingw() {
 }
 
 stage_freetype() {
+    [ -f "$M/build/freetype-ios/build/libfreetype.a" ] && return
     [ -d "$M/research/freetype" ] ||
         git clone --depth 1 --branch "$FREETYPE_TAG" https://github.com/freetype/freetype.git "$M/research/freetype"
     bash "$M/build/freetype-ios/build.sh"
@@ -63,8 +66,15 @@ stage_winehost() {
     [ -e "$w/build-arm64ec/include" ] || ln -s ../build-macos/include "$w/build-arm64ec/include"
 }
 
-stage_gnutls() { bash "$M/build/gnutls-ios/build.sh"; }
-stage_ffmpeg() { bash "$M/build/ffmpeg/build.sh"; }
+# GnuTLS and FFmpeg come from pinned tarballs and are cached by the workflow; a restored build is kept.
+stage_gnutls() {
+    [ -f "$TC/gnutls-ios/include/gnutls/gnutls.h" ] && return
+    bash "$M/build/gnutls-ios/build.sh"
+}
+stage_ffmpeg() {
+    [ -f "$TC/ffmpeg-ios/include/libavcodec/avcodec.h" ] && [ -f "$M/app/Madeira/libavcodec.a" ] && return
+    bash "$M/build/ffmpeg/build.sh"
+}
 stage_fex() { bash "$M/build/fex-ios/build.sh"; }
 stage_ntdll() { bash "$M/build/ntdll-unix/build.sh"; }
 stage_win32u() { bash "$M/build/win32u-unix/build.sh"; }

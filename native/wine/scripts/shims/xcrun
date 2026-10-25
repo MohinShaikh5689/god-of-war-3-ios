@@ -1,0 +1,9 @@
+#!/bin/bash
+# Madeira's build scripts compile with `xcrun -sdk iphoneos clang ...`; this puts ccache in front of
+# those calls (build-wine-ios.sh puts this folder first in PATH). Everything else goes to the real xcrun.
+if [ "${1:-}" = -sdk ] && { [ "${3:-}" = clang ] || [ "${3:-}" = clang++ ]; } && command -v ccache >/dev/null; then
+    sdk=$2 tool=$3
+    shift 3
+    SDKROOT="$(/usr/bin/xcrun --sdk "$sdk" --show-sdk-path)" exec ccache "$(/usr/bin/xcrun --sdk "$sdk" -f "$tool")" "$@"
+fi
+exec /usr/bin/xcrun "$@"

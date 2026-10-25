@@ -19,6 +19,23 @@ permissions:
 env:
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   CCACHE_MAXSIZE: 2G
+  CCACHE_SLOPPINESS: clang_index_store,file_stat_matches,include_file_ctime,include_file_mtime,ivfsoverlay,pch_defines,modules,system_headers,time_macros
+  CCACHE_DEPEND: 'true'
+  LLVM_PATHS: |
+    native/third_party/Madeira/toolchains/llvm-project
+    native/third_party/Madeira/toolchains/llvm-host-build/bin
+    native/third_party/Madeira/toolchains/llvm-ios-build/include
+    native/third_party/Madeira/toolchains/llvm-ios-build/lib/*.a
+  DEPS_PATHS: |
+    native/third_party/Madeira/toolchains/llvm-mingw-20260421-ucrt-macos-universal
+    native/third_party/Madeira/toolchains/gnutls-ios
+    native/third_party/Madeira/toolchains/ffmpeg-ios
+    native/third_party/Madeira/app/Madeira/libavformat.a
+    native/third_party/Madeira/app/Madeira/libavcodec.a
+    native/third_party/Madeira/app/Madeira/libswresample.a
+    native/third_party/Madeira/app/Madeira/libavutil.a
+    native/third_party/Madeira/research/freetype
+    native/third_party/Madeira/build/freetype-ios/build
 
 jobs:
   libs:
@@ -35,29 +52,65 @@ jobs:
       - name: Submodules
         run: bash native/wine/scripts/fetch-submodules.sh
 
+      # The tarballs' checksums are in the Madeira submodule, so a Madeira with new versions rebuilds them.
+      - name: Dependency cache key
+        id: deps
+        run: |
+          sums=$(cat native/third_party/Madeira/build/gnutls-ios/src/SHA256SUMS native/third_party/Madeira/build/ffmpeg/src/SHA256SUMS | shasum | cut -c1-16)
+          echo "key=wine-deps-v1-$sums" >> "$GITHUB_OUTPUT"
+
       - name: Tools
         run: brew install bison flex ninja ccache meson
 
-      # LLVM 15 for iOS takes the longest and only changes with the script (its flags and tag).
-      - name: LLVM cache
-        uses: actions/cache@v4
+      # Restored before the build and saved after it even when it fails (actions/cache alone saves only
+      # on success), so a stage that finished once is never built again: LLVM 15 for iOS (about an
+      # hour), the dependencies from pinned tarballs, and every compiled file through ccache.
+      # Bump the -vN of a key when what it caches is built differently.
+      - name: Restore LLVM
+        uses: actions/cache/restore@v4
         with:
-          path: |
-            native/third_party/Madeira/toolchains/llvm-project
-            native/third_party/Madeira/toolchains/llvm-host-build/bin
-            native/third_party/Madeira/toolchains/llvm-ios-build/include
-            native/third_party/Madeira/toolchains/llvm-ios-build/lib/*.a
-          key: llvm15-ios-${{ hashFiles('native/wine/scripts/build-wine-ios.sh') }}
+          path: ${{ env.LLVM_PATHS }}
+          key: llvm-15.0.7-ios17-v1
 
-      - name: ccache
-        uses: actions/cache@v4
+      - name: Restore dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DEPS_PATHS }}
+          key: ${{ steps.deps.outputs.key }}
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
         with:
           path: .ccache
-          key: ccache-wine-${{ github.sha }}
+          key: ccache-wine-${{ github.run_id }}
           restore-keys: ccache-wine-
 
       - name: Build
         run: bash native/wine/scripts/build-wine-ios.sh
+
+      - name: Save LLVM
+        if: always() && hashFiles('native/third_party/Madeira/toolchains/llvm-ios-build/lib/libLLVMCore.a') != ''
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.LLVM_PATHS }}
+          key: llvm-15.0.7-ios17-v1
+
+      - name: Save dependencies
+        if: always() && hashFiles('native/third_party/Madeira/toolchains/gnutls-ios/include/gnutls/gnutls.h') != '' && hashFiles('native/third_party/Madeira/toolchains/ffmpeg-ios/include/libavcodec/avcodec.h') != '' && hashFiles('native/third_party/Madeira/build/freetype-ios/build/libfreetype.a') != ''
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DEPS_PATHS }}
+          key: ${{ steps.deps.outputs.key }}
+
+      - name: Save ccache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-wine-${{ github.run_id }}
 
       - name: Logs
         if: always()
