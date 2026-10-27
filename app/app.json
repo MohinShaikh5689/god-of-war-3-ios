@@ -2,7 +2,7 @@
   "expo": {
     "name": "gow3-ios",
     "slug": "gow3-ios",
-    "version": "0.2.2",
+    "version": "0.2.3",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -25,7 +25,11 @@
         "BGTaskSchedulerPermittedIdentifiers": [
           "$(PRODUCT_BUNDLE_IDENTIFIER).pairing.*"
         ],
-        "CFBundleDisplayName": "Olympus"
+        "CFBundleDisplayName": "Olympus",
+        "LSApplicationCategoryType": "public.app-category.games",
+        "LSSupportsGameMode": true,
+        "GCSupportsGameMode": true,
+        "CADisableMinimumFrameDurationOnPhone": true
       },
       "entitlements": {
         "get-task-allow": true,
