@@ -10,6 +10,7 @@ on:
     branches: [wine-engine]
     paths:
       - native/wine/**
+      - '!native/wine/scripts/build-wine-i386.sh'
       - native/third_party/Madeira
       - .github/workflows/wine.yml
   workflow_dispatch:

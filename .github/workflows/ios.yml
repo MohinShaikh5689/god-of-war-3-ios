@@ -27,7 +27,8 @@ env:
 jobs:
   ipa:
     runs-on: macos-26
-    timeout-minutes: 120
+    # A run that rebuilds the Wine engine or its i386 farm (both cached) takes over two hours.
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v5
 
@@ -88,7 +89,7 @@ jobs:
         run: |
           madeira=$(git ls-tree HEAD native/third_party/Madeira | awk '{print $3}' | cut -c1-12)
           xcode=$(xcodebuild -version | shasum | cut -c1-12)
-          echo "key=winecore-$madeira-$xcode-${{ hashFiles('native/wine/**') }}" >> "$GITHUB_OUTPUT"
+          echo "key=winecore-$madeira-$xcode-${{ hashFiles('native/wine/**', '!native/wine/scripts/build-wine-i386.sh') }}" >> "$GITHUB_OUTPUT"
 
       - name: Restore WineCore.framework
         id: wine-cache
@@ -141,6 +142,36 @@ jobs:
         run: |
           brew install bison flex meson
           native/wine/scripts/build-wine-ios.sh
+
+      # 32-bit games (WoW64): Madeira's i386 DLL farm, which embed-wine.sh copies into the app. Cached by
+      # the Madeira commit and its build script; saved right after a build, so a later failing step does
+      # not throw it away.
+      - name: i386 farm cache key
+        id: i386-key
+        run: |
+          madeira=$(git ls-tree HEAD native/third_party/Madeira | awk '{print $3}' | cut -c1-12)
+          echo "key=wine-i386-$madeira-${{ hashFiles('native/wine/scripts/build-wine-i386.sh') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the i386 farm
+        id: i386-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: native/third_party/Madeira/app/Madeira/i386-windows
+          key: ${{ steps.i386-key.outputs.key }}
+
+      - name: Wine i386 farm (32-bit games)
+        if: steps.i386-cache.outputs.cache-hit != 'true'
+        run: |
+          native/wine/scripts/fetch-submodules.sh
+          brew install bison flex meson
+          native/wine/scripts/build-wine-i386.sh
+
+      - name: Save the i386 farm
+        if: steps.i386-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: native/third_party/Madeira/app/Madeira/i386-windows
+          key: ${{ steps.i386-key.outputs.key }}
 
       - name: Cargo cache
         uses: actions/cache@v4
