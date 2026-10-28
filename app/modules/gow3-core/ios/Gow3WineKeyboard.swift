@@ -155,9 +155,31 @@ final class Gow3WineTextInput: UIView, UIKeyInput {
   private lazy var bar = makeBar()
   override var inputAccessoryView: UIView? { bar }
 
-  private func press(_ vk: Int32) {
-    post?(vk, true)
-    post?(vk, false)
+  /// Key transitions still to post, one per `step`. A key's down and up must not reach Wine together:
+  /// games that poll the keyboard once a frame (DirectInput's GetDeviceState; FromSoftware's) never see a
+  /// key that was released before the next poll, so each key is held for a few frames, as a finger would.
+  private var pending: [(vk: Int32, down: Bool)] = []
+  private var timer: Timer?
+  private static let step: TimeInterval = 0.05
+
+  private func press(_ vk: Int32, shift: Bool = false) {
+    if shift { pending.append((0x10, true)) }
+    pending.append((vk, true))
+    pending.append((vk, false))
+    if shift { pending.append((0x10, false)) }
+    guard timer == nil else { return }
+    let timer = Timer(timeInterval: Self.step, repeats: true) { [weak self] timer in
+      guard let self, !self.pending.isEmpty else {
+        timer.invalidate()
+        self?.timer = nil
+        return
+      }
+      let next = self.pending.removeFirst()
+      self.post?(next.vk, next.down)
+    }
+    RunLoop.main.add(timer, forMode: .common)
+    self.timer = timer
+    timer.fire()
   }
 
   func insertText(_ text: String) {
@@ -165,9 +187,7 @@ final class Gow3WineTextInput: UIView, UIKeyInput {
     if Gow3WineHardwareKeyboard.connected { return }
     for ch in text {
       guard let (vk, shift) = Gow3WineKeys.key(for: ch) else { continue }
-      if shift { post?(0x10, true) }
-      press(vk)
-      if shift { post?(0x10, false) }
+      press(vk, shift: shift)
     }
   }
 
