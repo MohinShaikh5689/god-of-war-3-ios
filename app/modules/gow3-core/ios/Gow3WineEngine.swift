@@ -19,6 +19,7 @@ final class Gow3WineEngine {
   private typealias ScreenSize = @convention(c) (UnsafeMutablePointer<Int32>, UnsafeMutablePointer<Int32>) -> Void
   private typealias Touch = @convention(c) (Int32, Int32) -> Void
   private typealias Gamepad = @convention(c) (Int32, UnsafeRawPointer?) -> Void
+  private typealias Key = @convention(c) (Int32, Int32) -> Void
   private typealias Counter = @convention(c) () -> UInt64
   private typealias MeterEnable = @convention(c) (Int32) -> Void
   private typealias Seconds = @convention(c) () -> Double
@@ -32,6 +33,8 @@ final class Gow3WineEngine {
   let touchMove: (Int32, Int32) -> Void
   let touchUp: (Int32, Int32) -> Void
   private let gamepadFn: Gamepad
+  /// winios_post_key: a Windows virtual key down or up (Gow3WineKeyboard.swift); nil if missing.
+  private var keyFn: Key?
   /// DXMT's present counter and GPU busy time (winemetal_unix.c), for the FPS meter; nil if missing.
   private var presentsFn: Counter?
   private var gpuMeterEnableFn: MeterEnable?
@@ -111,6 +114,7 @@ final class Gow3WineEngine {
       screenSizeFn: try symbol("winecore_screen_size", type: ScreenSize.self),
       touchDown: try touch("winios_post_touch_down"), touchMove: try touch("winios_post_touch_move"),
       touchUp: try touch("winios_post_touch_up"), gamepadFn: try symbol("winios_gamepad_set_state", type: Gamepad.self))
+    engine.keyFn = try? symbol("winios_post_key", type: Key.self)
     engine.presentsFn = try? symbol("madeira_get_present_count", type: Counter.self)
     engine.gpuMeterEnableFn = try? symbol("madeira_gpu_meter_enable", type: MeterEnable.self)
     engine.gpuBusyFn = try? symbol("madeira_gpu_meter_busy_seconds", type: Seconds.self)
@@ -163,6 +167,8 @@ final class Gow3WineEngine {
   }
 
   func disconnectGamepad(_ index: Int32) { gamepadFn(index, nil) }
+
+  func postKey(_ vk: Int32, down: Bool) { keyFn?(vk, down ? 1 : 0) }
 
   /// Frames the game presented so far, and the GPU's busy seconds while the meter is on (0 without them).
   var presents: UInt64 { presentsFn?() ?? 0 }
@@ -283,10 +289,13 @@ final class Gow3WineEngine {
 }
 
 /// The Windows game's screen: DXMT presents into this view's CAMetalLayer, touches become the guest's
-/// mouse (aspect-fit, as the picture), and controllers are XInput pads 0-3.
+/// mouse (aspect-fit, as the picture), controllers are XInput pads 0-3, and a hardware keyboard or the
+/// iOS keyboard (three-finger tap) is the keyboard.
 final class Gow3WineGameViewController: UIViewController {
   let metalView = Gow3MetalView()
   private var engine: Gow3WineEngine?
+  private var keyboard: Gow3WineHardwareKeyboard?
+  private let textInput = Gow3WineTextInput(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
   private var link: CADisplayLink?
   /// The FPS meter, top right like GoW3's: frames per second, frame time, GPU busy share, app memory.
   private let meter = UILabel()
@@ -309,6 +318,10 @@ final class Gow3WineGameViewController: UIViewController {
   func attach(_ engine: Gow3WineEngine) {
     self.engine = engine
     engine.setLayer(metalView.metalLayer)
+    let post: (Int32, Bool) -> Void = { [weak engine] vk, down in engine?.postKey(vk, down: down) }
+    keyboard = Gow3WineHardwareKeyboard(post: post)
+    keyboard?.active = view.window != nil
+    textInput.post = post
     link = CADisplayLink(target: self, selector: #selector(pollControllers))
     link?.add(to: .main, forMode: .common)
     Self.current = self
@@ -336,9 +349,22 @@ final class Gow3WineGameViewController: UIViewController {
     leave.numberOfTapsRequired = 2
     leave.cancelsTouchesInView = false
     view.addGestureRecognizer(leave)
+    // The iOS keyboard, for games that want typing (a character name): a three-finger tap shows or hides it.
+    // A clear 1x1 view, not a hidden one: UIKit may not let a hidden view own the keyboard.
+    textInput.backgroundColor = .clear
+    textInput.isUserInteractionEnabled = false
+    view.addSubview(textInput)
+    let typing = UITapGestureRecognizer(target: self, action: #selector(toggleKeyboard))
+    typing.numberOfTouchesRequired = 3
+    typing.cancelsTouchesInView = false
+    view.addGestureRecognizer(typing)
   }
 
   @objc private func leaveGame() { dismiss(animated: false) }
+
+  @objc private func toggleKeyboard() {
+    if textInput.isFirstResponder { textInput.resignFirstResponder() } else { textInput.becomeFirstResponder() }
+  }
 
   /// Shows the running session's view again over the topmost view controller.
   static func resume() -> Bool {
@@ -355,6 +381,13 @@ final class Gow3WineGameViewController: UIViewController {
     meter.isHidden = !Gow3WineEngine.meterEnabled
     engine?.enableGpuMeter(Gow3WineEngine.meterEnabled)
     meterSample = nil
+    keyboard?.active = true
+  }
+
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    keyboard?.active = false
+    textInput.resignFirstResponder()
   }
 
   /// Twice a second, from the frame link: the rates over the last interval.

@@ -133,6 +133,9 @@ lock (`g_madeira_vsync_mode = 1` in DXMT), AVX off, no NVIDIA identity.
   used (Dark Souls Remastered switches to keyboard-and-mouse prompts and then ignores the pad;
   `docs/CONTROLLERS.md`): the Windows view sends no touches while a controller is connected. Win32u's
   foreground fix (on by default) covers games that read input only when their window is in front.
+  Keyboard (0.2.5, `Gow3WineKeyboard.swift`): a hardware keyboard reaches the game raw through GCKeyboard,
+  and a three-finger tap shows the iOS keyboard (with Esc/Tab/Enter/arrows), both as Windows virtual keys
+  through `winios_post_key`. Dark Souls' character name needs one; before 0.2.5 no key reached Wine at all.
   Later tuning in `Documents/madeira.cfg`: `env.MADEIRA_THREAD_QOS = GXWorker*=user-initiated;FD4JobWorker*=utility`
   (made for Dark Souls III's worker threads), and the memory switches of Madeira's example config
   (`docs/madeira.cfg.example`: `swap-mb` file-backed guest memory, `totalphys`, `vram-mb`, `pool`), all off
